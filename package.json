@@ -1,0 +1,20 @@
+{
+    "name": "herdr-web",
+    "version": "0.1.0",
+    "description": "Mobile-first web UI plugin for herdr — view and drive panes from a phone browser, with agent-state notifications",
+    "author": "barnuri",
+    "license": "MIT",
+    "type": "commonjs",
+    "engines": {
+        "node": ">=22.0.0"
+    },
+    "main": "server.js",
+    "scripts": {
+        "start": "node server.js",
+        "test": "node --test \"tests/*.test.js\""
+    },
+    "dependencies": {
+        "ws": "^8.18.0"
+    },
+    "keywords": ["herdr", "herdr-plugin", "web-ui", "pwa", "terminal", "notifications"]
+}

@@ -1,0 +1,24 @@
+id = "barnuri.herdr-web"
+name = "Herdr Web"
+version = "0.1.0"
+min_herdr_version = "0.7.0"
+description = "Mobile-first web UI for herdr — view and drive panes from a phone, with agent-state notifications"
+platforms = ["linux", "macos"]
+
+[[build]]
+command = ["npm", "install", "--omit=dev"]
+
+[[startup]]
+command = ["node", "server.js"]
+
+[[actions]]
+id = "open"
+title = "Open Herdr Web in browser"
+contexts = ["workspace", "pane"]
+command = ["node", "bin/open-url.js"]
+
+[[actions]]
+id = "show-url"
+title = "Show Herdr Web URL"
+contexts = ["workspace", "pane"]
+command = ["node", "bin/open-url.js", "--notify-only"]
