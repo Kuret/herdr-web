@@ -14,7 +14,9 @@ terminal.
 - **Live pane view** — rendered terminal output (ANSI colors preserved) streamed over WebSocket.
 - **Agent state at a glance** — every pane is a chip with a status dot (amber = working,
   green = idle, red = blocked); the top bar shows the whole herd as a dot strip.
-- **Drive panes from the phone** — send text, plus a quick-keys bar (`esc`, `tab`, arrows,
+- **Type straight into the terminal** — tap/click the pane view and just type: keystrokes
+  (letters, `Enter`, `Backspace`, arrows, `Ctrl+…`, `F1–F12`) stream to the pane in order, no
+  separate input box. A quick-keys bar covers keys phone keyboards lack (`esc`, `tab`, arrows,
   `ctrl+c`, `enter`).
 - **Notifications** — toggle the bell in the top bar; when an agent transitions out of
   `working` or into `blocked`, you get a browser/PWA notification (and an in-app toast).

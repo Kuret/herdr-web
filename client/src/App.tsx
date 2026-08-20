@@ -69,10 +69,14 @@ export function App() {
                 onToggleNotifications={() => void toggleNotifications()}
             />
             <PaneTabs panes={panes} workspaces={workspaces} activePaneId={activePaneId} onSelect={selectPane} />
-            <Terminal html={paneHtml} hasPane={activePaneId !== null} />
+            <Terminal
+                html={paneHtml}
+                hasPane={activePaneId !== null}
+                onSendText={(text) => activePaneId && send({ type: 'send_text', paneId: activePaneId, text })}
+                onSendKeys={(keys) => activePaneId && send({ type: 'send_keys', paneId: activePaneId, keys })}
+            />
             <Composer
                 disabled={activePaneId === null}
-                onSendText={(text) => activePaneId && send({ type: 'send_text', paneId: activePaneId, text })}
                 onSendKeys={(keys) => activePaneId && send({ type: 'send_keys', paneId: activePaneId, keys })}
             />
             <ToastHost event={lastEvent} error={lastError} />

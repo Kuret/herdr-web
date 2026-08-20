@@ -205,6 +205,16 @@ describe('HerdrWebServer', () => {
       assert.equal(socket.sent[0].type, 'pane_output');
     });
 
+    test('concurrent send messages reach herdr in submission order', async () => {
+      const socket = makeSocket();
+      const letters = ['r', 'u', 'n', ' ', 'i', 't'];
+      await Promise.all(
+        letters.map((text) => server.handleMessage(socket, { type: 'send_text', paneId: 'pane-1', text }))
+      );
+      const sends = loggedArgs().filter((line) => line.startsWith('pane send-text'));
+      assert.deepEqual(sends.map((line) => line.trimEnd()), letters.map((text) => `pane send-text pane-1 ${text}`.trimEnd()));
+    });
+
     test('send_text with a non-string text falls through to the unknown-type error', async () => {
       const socket = makeSocket();
       await server.handleMessage(socket, { type: 'send_text', paneId: 'pane-1', text: 42 });

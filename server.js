@@ -34,6 +34,15 @@ class HerdrWebServer {
         this.lastPaneHtml = new Map();
         this.topologyTimer = null;
         this.paneTimer = null;
+        this.sendChain = Promise.resolve();
+    }
+
+    // keystrokes must reach the pane in the order they were typed — WS messages
+    // are handled concurrently, so writes are serialized through one chain
+    enqueueSend(operation) {
+        const next = this.sendChain.then(operation, operation);
+        this.sendChain = next.catch(() => {});
+        return next;
     }
 
     start() {
@@ -150,12 +159,12 @@ class HerdrWebServer {
             return;
         }
         if (type === 'send_text' && typeof paneId === 'string' && typeof message.text === 'string') {
-            await herdr.sendText(paneId, message.text);
+            await this.enqueueSend(() => herdr.sendText(paneId, message.text));
             await this.pushPaneOutput(paneId, { force: true });
             return;
         }
         if (type === 'send_keys' && typeof paneId === 'string' && Array.isArray(message.keys) && message.keys.length > 0) {
-            await herdr.sendKeys(paneId, message.keys.map(String));
+            await this.enqueueSend(() => herdr.sendKeys(paneId, message.keys.map(String)));
             await this.pushPaneOutput(paneId, { force: true });
             return;
         }

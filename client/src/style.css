@@ -245,6 +245,25 @@ body {
     display: none !important;
 }
 
+/* invisible focus target: typing lands in the pane, phone keyboards open on tap */
+.typing-input {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    border: none;
+    opacity: 0;
+    background: transparent;
+    color: transparent;
+    pointer-events: none;
+}
+
+.terminal-wrap:focus-within {
+    box-shadow: inset 0 0 0 1px var(--accent);
+}
+
 /* ---------- composer ---------- */
 .composer {
     border-top: 1px solid var(--border);
@@ -289,41 +308,8 @@ body {
     color: var(--blocked);
 }
 
-.send-row {
-    display: flex;
-    gap: 8px;
-}
-
-.send-row input {
-    flex: 1;
-    min-height: var(--touch);
-    padding: 0 14px;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    background: var(--bg);
-    color: var(--text);
-    font-family: var(--mono);
-    font-size: 16px;
-}
-
-.send-row input::placeholder {
-    color: var(--text-dim);
-}
-
-.send-btn {
-    min-height: var(--touch);
-    padding: 0 18px;
-    border: none;
-    border-radius: 10px;
-    background: var(--accent);
-    color: #05131f;
-    font-weight: 600;
-    font-size: 15px;
-    cursor: pointer;
-}
-
 button:focus-visible,
-input:focus-visible,
+input:not(.typing-input):focus-visible,
 .terminal:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 1px;
@@ -333,7 +319,7 @@ input:focus-visible,
 .toast-host {
     position: fixed;
     left: 50%;
-    bottom: calc(120px + env(safe-area-inset-bottom));
+    bottom: calc(76px + env(safe-area-inset-bottom));
     transform: translateX(-50%);
     display: flex;
     flex-direction: column;
@@ -457,9 +443,7 @@ input:focus-visible,
     background: var(--unknown);
 }
 
-.key-btn:disabled,
-.send-btn:disabled,
-.send-row input:disabled {
+.key-btn:disabled {
     opacity: 0.45;
     cursor: default;
 }
