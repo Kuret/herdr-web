@@ -38,6 +38,13 @@ class HerdrWebServer {
 
     start() {
         const httpServer = http.createServer((req, res) => this.serveStatic(req, res));
+        httpServer.on('error', (error) => {
+            if (error.code === 'EADDRINUSE') {
+                process.stderr.write(`herdr-web: ${this.config.host}:${this.config.port} is already in use — is another instance running?\n`);
+                process.exit(1);
+            }
+            throw error;
+        });
         this.wss = new WebSocketServer({
             server: httpServer,
             path: '/ws',
