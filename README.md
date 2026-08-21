@@ -124,6 +124,36 @@ on Android it has an "Open notification settings" button (an intent that opens t
 for the browser), on desktop a copy-the-settings-address button, on iOS step-by-step directions. Where push is unavailable, the bell falls back to
 page-side notifications while the app is open.
 
+## Background notifications guide (macOS / Linux / Windows)
+
+Push is delivered by the **browser process**, not the page — so notifications keep arriving
+with the tab closed, as long as the browser is running (and on Android even when it isn't).
+Three things must hold, in order:
+
+**1. A trusted origin** (applies everywhere): open the app from `http://localhost:<port>` /
+`http://127.0.0.1:<port>` on the machine itself, a Tailscale HTTPS URL, or the HTTPS port with
+a certificate the device trusts. Untrusted self-signed HTTPS silently blocks the service
+worker (the bell will tell you).
+
+**2. Enable the bell** — you should immediately get a **"Notifications connected"** push. If
+you don't, the pipeline is broken and the OS settings below won't help.
+
+**3. Let the OS show them:**
+
+- **macOS** — System Settings → Notifications → your browser (Chrome/Edge/Safari): Allow
+  Notifications, and pick "Banners" or "Alerts". Check Focus/Do Not Disturb isn't swallowing
+  them. Chrome keeps delivering while it's running (even with all windows closed on macOS the
+  process usually stays alive — look for the menu-bar/dock icon).
+- **Windows** — Settings → System → Notifications: on for the browser; disable Focus assist
+  (or allow the browser through it). For delivery with all windows closed, enable the browser's
+  own "Continue running background apps when closed" (Chrome: Settings → System).
+- **Linux** — you need a notification daemon (GNOME/KDE ship one; on minimal WMs run `dunst`
+  or similar). Chrome delivers while any Chrome process runs; the same "background apps"
+  setting as Windows applies.
+
+Tip: installing the app as a **PWA** (address bar → Install) gives notifications their own app
+identity in OS settings and, on Android, delivery even with the browser fully closed.
+
 ## Development
 
 One helper script per platform, same four subcommands (`setup` · `dev` · `test` · `build`,

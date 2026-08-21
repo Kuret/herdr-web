@@ -43,6 +43,11 @@ export function NotificationHelp({ help, onClose }: NotificationHelpProps) {
                         Open the HTTPS version
                     </a>
                 )}
+                {help.certUrl && (
+                    <a className="sheet-btn sheet-btn-primary" href={help.certUrl} download>
+                        Download certificate
+                    </a>
+                )}
                 {help.platform === 'desktop' && help.settingsUrl && (
                     <button type="button" className="sheet-btn sheet-btn-primary" onClick={() => void copySettingsUrl()}>
                         {copied ? 'Copied — paste it in a new tab' : `Copy ${help.settingsUrl}`}

@@ -6,7 +6,7 @@ const https = require('node:https');
 const path = require('node:path');
 const fs = require('node:fs');
 const { WebSocketServer } = require('ws');
-const { loadTlsOptions } = require('./lib/tls');
+const { loadTlsOptions, activeCertificatePath } = require('./lib/tls');
 
 const { loadConfig } = require('./lib/config');
 const herdr = require('./lib/herdr');
@@ -117,6 +117,20 @@ class HerdrWebServer {
         if (requestPath === '/meta') {
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ https: this.config.https, httpsPort: this.config.httpsPort }));
+            return;
+        }
+        if (requestPath === '/cert') {
+            const certPath = this.config.https ? activeCertificatePath(this.config) : null;
+            if (!certPath) {
+                res.writeHead(404);
+                res.end('no certificate');
+                return;
+            }
+            res.writeHead(200, {
+                'Content-Type': 'application/x-x509-ca-cert',
+                'Content-Disposition': 'attachment; filename="herdr-web.crt"',
+            });
+            res.end(fs.readFileSync(certPath));
             return;
         }
         this.serveStatic(requestPath, res);

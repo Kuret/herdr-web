@@ -35,6 +35,7 @@ export interface NotificationSettingsHelp {
     readonly intentUrl?: string;
     readonly settingsUrl?: string;
     readonly httpsUrl?: string;
+    readonly certUrl?: string;
     readonly steps: readonly string[];
 }
 
@@ -63,11 +64,12 @@ export function untrustedCertHelp(userAgent: string): NotificationSettingsHelp {
     return {
         platform: 'insecure',
         title: 'Push needs a trusted certificate',
+        certUrl: '/cert',
         steps: [
             'Notifications work while this page is open, but background push is blocked: the HTTPS certificate is self-signed and this device does not trust it, so the browser refuses to register the service worker',
             isAndroid
-                ? 'Trust it: download the cert (https-cert.pem from the plugin state dir) to the phone, then Android Settings → Security → More security settings → Install a certificate → CA certificate'
-                : 'Trust the certificate on this device (macOS: open it in Keychain Access and set Always Trust), or serve a real certificate via httpsCertPath/httpsKeyPath',
+                ? 'Tap "Download certificate" below, then Android Settings → Security → More security settings → Install a certificate → CA certificate → pick herdr-web.crt'
+                : 'Tap "Download certificate" below and trust it (macOS: double-click it in Keychain Access → Trust → Always Trust; Windows: install to "Trusted Root Certification Authorities")',
             'Easiest alternative: use Tailscale (`tailscale serve <port>`) — it gives a properly trusted HTTPS URL with zero certificate work',
             'Then reload and toggle the bell again',
         ],
