@@ -1,4 +1,4 @@
-const CACHE_NAME = 'herdr-web-v1';
+const CACHE_NAME = 'herdr-web-v2';
 const APP_SHELL = ['/', '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/icon-512.png', '/fonts/SymbolsNerdFontMono-Regular.woff2'];
 
 self.addEventListener('install', (event) => {
@@ -32,6 +32,22 @@ self.addEventListener('fetch', (event) => {
                 return response;
             })
             .catch(() => caches.match(event.request).then((cached) => cached || Response.error())),
+    );
+});
+
+// real Web Push: the server sends these through the browser's push service,
+// so they arrive even when the page is closed
+self.addEventListener('push', (event) => {
+    let payload = { title: 'herdr', body: '' };
+    try {
+        payload = { ...payload, ...event.data.json() };
+    } catch {}
+    event.waitUntil(
+        self.registration.showNotification(payload.title, {
+            body: payload.body,
+            icon: '/icon-192.png',
+            tag: payload.tag || 'herdr-web',
+        }),
     );
 });
 

@@ -2,13 +2,10 @@ export interface HerdrPane {
     readonly pane_id: string;
     readonly tab_id: string;
     readonly workspace_id: string;
-    readonly cwd?: string;
-    readonly foreground_cwd?: string;
     readonly agent?: string;
     readonly agent_status?: string;
     readonly terminal_title?: string;
     readonly terminal_title_stripped?: string;
-    readonly focused?: boolean;
 }
 
 export interface HerdrWorkspace {
@@ -33,13 +30,13 @@ export interface AgentEvent {
 
 export type ServerMessage =
     | { type: 'topology'; workspaces: HerdrWorkspace[]; panes: HerdrPane[] }
-    | { type: 'pane_output'; paneId: string; html: string }
+    | { type: 'output'; data: string }
+    | { type: 'exit'; code: number }
     | { type: 'agent_event'; event: AgentEvent }
     | { type: 'error'; message: string };
 
 export type ClientMessage =
-    | { type: 'subscribe'; paneId: string }
-    | { type: 'unsubscribe' }
-    | { type: 'send_text'; paneId: string; text: string }
-    | { type: 'send_keys'; paneId: string; keys: string[] }
+    | { type: 'start'; cols: number; rows: number }
+    | { type: 'input'; data: string }
+    | { type: 'resize'; cols: number; rows: number }
     | { type: 'refresh_topology' };

@@ -6,6 +6,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
+const { Readable } = require('stream');
+
 const { HerdrWebServer } = require('../server');
 
 function makeConfig(overrides = {}) {
@@ -13,11 +15,43 @@ function makeConfig(overrides = {}) {
     host: '127.0.0.1',
     port: 0,
     topologyPollMs: 2000,
-    panePollMs: 1000,
-    readLines: 200,
     allowedOrigins: [],
     ...overrides,
   };
+}
+
+function makePushStub() {
+  return {
+    publicKey: 'test-public-key',
+    added: [],
+    removed: [],
+    notified: [],
+    addSubscription(sub) {
+      if (!sub || typeof sub.endpoint !== 'string') { return false; }
+      this.added.push(sub);
+      return true;
+    },
+    removeSubscription(endpoint) {
+      this.removed.push(endpoint);
+      return true;
+    },
+    async notifyAll(payload) {
+      this.notified.push(payload);
+    },
+  };
+}
+
+function makeServer(overrides = {}) {
+  return new HerdrWebServer(makeConfig(overrides), makePushStub());
+}
+
+function makeJsonReq(method, url, body) {
+  const req = Readable.from([Buffer.from(JSON.stringify(body))]);
+  req.url = url;
+  req.method = method;
+  req.headers = {};
+  req.destroy = () => {};
+  return req;
 }
 
 function makeSocket() {
@@ -52,29 +86,29 @@ describe('HerdrWebServer', () => {
     const req = { headers: { host: '127.0.0.1:7936' } };
 
     test('missing origin is allowed (non-browser clients)', () => {
-      const server = new HerdrWebServer(makeConfig());
+      const server = makeServer();
       assert.equal(server.isAllowedOrigin(undefined, req), true);
       assert.equal(server.isAllowedOrigin('', req), true);
     });
 
     test('origin whose host matches the request host is allowed', () => {
-      const server = new HerdrWebServer(makeConfig());
+      const server = makeServer();
       assert.equal(server.isAllowedOrigin('http://127.0.0.1:7936', req), true);
     });
 
     test('origin whose host does not match the request host is rejected', () => {
-      const server = new HerdrWebServer(makeConfig());
+      const server = makeServer();
       assert.equal(server.isAllowedOrigin('http://evil.example.com', req), false);
       assert.equal(server.isAllowedOrigin('http://127.0.0.1:9999', req), false);
     });
 
     test('malformed origin string is rejected, not thrown', () => {
-      const server = new HerdrWebServer(makeConfig());
+      const server = makeServer();
       assert.equal(server.isAllowedOrigin('not a url', req), false);
     });
 
     test('explicitly configured allowedOrigins entry is accepted despite host mismatch', () => {
-      const server = new HerdrWebServer(makeConfig({ allowedOrigins: ['https://phone.example.com'] }));
+      const server = makeServer({ allowedOrigins: ['https://phone.example.com'] });
       assert.equal(server.isAllowedOrigin('https://phone.example.com', req), true);
     });
   });
@@ -83,40 +117,40 @@ describe('HerdrWebServer', () => {
     let server;
 
     beforeEach(() => {
-      server = new HerdrWebServer(makeConfig());
+      server = makeServer();
     });
 
     test('malformed percent-encoding returns 400 instead of throwing', async () => {
       const res = makeRes();
-      server.serveStatic({ url: '/%zz', headers: {} }, res);
+      server.handleHttp({ url: '/%zz', headers: {}, method: "GET" }, res);
       await res.finished;
       assert.equal(res.statusCode, 400);
     });
 
     test('null byte in the path returns 400', async () => {
       const res = makeRes();
-      server.serveStatic({ url: '/%00', headers: {} }, res);
+      server.handleHttp({ url: '/%00', headers: {}, method: "GET" }, res);
       await res.finished;
       assert.equal(res.statusCode, 400);
     });
 
     test('plain ../ traversal never serves files outside public/', async () => {
       const res = makeRes();
-      server.serveStatic({ url: '/../server.js', headers: {} }, res);
+      server.handleHttp({ url: '/../server.js', headers: {}, method: "GET" }, res);
       await res.finished;
       assert.ok([403, 404].includes(res.statusCode), `expected 403/404, got ${res.statusCode}`);
     });
 
     test('encoded-slash ../ traversal is rejected with 403', async () => {
       const res = makeRes();
-      server.serveStatic({ url: '/..%2Fserver.js', headers: {} }, res);
+      server.handleHttp({ url: '/..%2Fserver.js', headers: {}, method: "GET" }, res);
       await res.finished;
       assert.equal(res.statusCode, 403);
     });
 
     test('/index.html is served from public/ with the html mime type', async () => {
       const res = makeRes();
-      server.serveStatic({ url: '/index.html', headers: {} }, res);
+      server.handleHttp({ url: '/index.html', headers: {}, method: "GET" }, res);
       await res.finished;
       assert.equal(res.statusCode, 200);
       assert.equal(res.headers['Content-Type'], 'text/html; charset=utf-8');
@@ -125,7 +159,7 @@ describe('HerdrWebServer', () => {
 
     test('/ maps to index.html', async () => {
       const res = makeRes();
-      server.serveStatic({ url: '/', headers: {} }, res);
+      server.handleHttp({ url: '/', headers: {}, method: "GET" }, res);
       await res.finished;
       assert.equal(res.statusCode, 200);
       assert.equal(res.headers['Content-Type'], 'text/html; charset=utf-8');
@@ -136,16 +170,11 @@ describe('HerdrWebServer', () => {
     let server;
     let savedBinPath;
     let tempDir;
-    let argsLog;
 
     beforeEach(() => {
-      server = new HerdrWebServer(makeConfig());
+      server = makeServer();
       savedBinPath = process.env.HERDR_BIN_PATH;
       tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'herdr-web-server-test-'));
-      argsLog = path.join(tempDir, 'args.log');
-      const stubPath = path.join(tempDir, 'herdr-stub');
-      fs.writeFileSync(stubPath, `#!/bin/sh\nprintf '%s\\n' "$*" >> '${argsLog}'\nprintf 'stub pane output'\n`, { mode: 0o755 });
-      process.env.HERDR_BIN_PATH = stubPath;
     });
 
     afterEach(() => {
@@ -157,106 +186,117 @@ describe('HerdrWebServer', () => {
       fs.rmSync(tempDir, { recursive: true, force: true });
     });
 
-    function loggedArgs() {
-      return fs.existsSync(argsLog) ? fs.readFileSync(argsLog, 'utf8').trim().split('\n') : [];
-    }
-
     test('unknown message type replies with an error', async () => {
       const socket = makeSocket();
-      await server.handleMessage(socket, { type: 'bogus' });
+      server.handleMessage(socket, { type: 'bogus' });
       assert.deepEqual(socket.sent, [{ type: 'error', message: 'unknown message type: bogus' }]);
     });
 
-    test('subscribe with a non-string paneId falls through to the unknown-type error', async () => {
+    test('input with a non-string payload falls through to the unknown-type error', () => {
       const socket = makeSocket();
-      await server.handleMessage(socket, { type: 'subscribe', paneId: 42 });
-      assert.equal(server.subscriptions.size, 0);
-      assert.deepEqual(socket.sent, [{ type: 'error', message: 'unknown message type: subscribe' }]);
+      server.handleMessage(socket, { type: 'input', data: 42 });
+      assert.deepEqual(socket.sent, [{ type: 'error', message: 'unknown message type: input' }]);
     });
 
-    test('subscribe registers the socket and pushes the pane output', async () => {
+    test('input and resize without a started terminal are silent no-ops', () => {
       const socket = makeSocket();
-      await server.handleMessage(socket, { type: 'subscribe', paneId: 'pane-1' });
-      assert.equal(server.subscriptions.get(socket), 'pane-1');
-      assert.equal(socket.sent.length, 1);
-      assert.equal(socket.sent[0].type, 'pane_output');
-      assert.equal(socket.sent[0].paneId, 'pane-1');
-      assert.ok(socket.sent[0].html.includes('stub pane output'));
-      assert.deepEqual(loggedArgs(), ['pane read pane-1 --lines 200 --format ansi']);
-    });
-
-    test('unsubscribe removes the subscription', async () => {
-      const socket = makeSocket();
-      server.subscriptions.set(socket, 'pane-1');
-      await server.handleMessage(socket, { type: 'unsubscribe' });
-      assert.equal(server.subscriptions.has(socket), false);
+      server.handleMessage(socket, { type: 'input', data: 'x' });
+      server.handleMessage(socket, { type: 'resize', cols: 80, rows: 24 });
       assert.deepEqual(socket.sent, []);
     });
 
-    test('send_text forwards to herdr and pushes fresh pane output to subscribers', async () => {
+    test('start spawns one pty per socket and ignores a duplicate start', async () => {
+      // the stub must stay alive like a TUI would, or onExit races the assertions
+      const ttyStub = path.join(tempDir, 'tty-stub');
+      fs.writeFileSync(ttyStub, '#!/bin/sh\ncat\n', { mode: 0o755 });
+      process.env.HERDR_BIN_PATH = ttyStub;
       const socket = makeSocket();
-      server.subscriptions.set(socket, 'pane-1');
-      await server.handleMessage(socket, { type: 'send_text', paneId: 'pane-1', text: 'hello' });
-      assert.deepEqual(loggedArgs(), [
-        'pane send-text pane-1 hello',
-        'pane read pane-1 --lines 200 --format ansi',
-      ]);
-      assert.equal(socket.sent.length, 1);
-      assert.equal(socket.sent[0].type, 'pane_output');
+      server.handleMessage(socket, { type: 'start', cols: 80, rows: 24 });
+      assert.equal(server.ptyBySocket.size, 1);
+      const first = server.ptyBySocket.get(socket);
+      server.handleMessage(socket, { type: 'start', cols: 80, rows: 24 });
+      assert.equal(server.ptyBySocket.get(socket), first);
+      server.dropClient(socket);
+      assert.equal(server.ptyBySocket.size, 0);
     });
 
-    test('concurrent send messages reach herdr in submission order', async () => {
+    test('terminal output is streamed back to the owning socket', async () => {
+      const ttyStub = path.join(tempDir, 'tty-stub');
+      fs.writeFileSync(ttyStub, '#!/bin/sh\nprintf hello-from-pty\ncat\n', { mode: 0o755 });
+      process.env.HERDR_BIN_PATH = ttyStub;
       const socket = makeSocket();
-      const letters = ['r', 'u', 'n', ' ', 'i', 't'];
-      await Promise.all(
-        letters.map((text) => server.handleMessage(socket, { type: 'send_text', paneId: 'pane-1', text }))
-      );
-      const sends = loggedArgs().filter((line) => line.startsWith('pane send-text'));
-      assert.deepEqual(sends.map((line) => line.trimEnd()), letters.map((text) => `pane send-text pane-1 ${text}`.trimEnd()));
-    });
-
-    test('send_text with a non-string text falls through to the unknown-type error', async () => {
-      const socket = makeSocket();
-      await server.handleMessage(socket, { type: 'send_text', paneId: 'pane-1', text: 42 });
-      assert.deepEqual(loggedArgs(), []);
-      assert.deepEqual(socket.sent, [{ type: 'error', message: 'unknown message type: send_text' }]);
-    });
-
-    test('send_keys forwards each key to herdr', async () => {
-      const socket = makeSocket();
-      await server.handleMessage(socket, { type: 'send_keys', paneId: 'pane-1', keys: ['Enter'] });
-      assert.deepEqual(loggedArgs(), [
-        'pane send-keys pane-1 Enter',
-        'pane read pane-1 --lines 200 --format ansi',
-      ]);
-    });
-
-    test('send_keys with an empty keys array falls through to the unknown-type error', async () => {
-      const socket = makeSocket();
-      await server.handleMessage(socket, { type: 'send_keys', paneId: 'pane-1', keys: [] });
-      assert.deepEqual(loggedArgs(), []);
-      assert.deepEqual(socket.sent, [{ type: 'error', message: 'unknown message type: send_keys' }]);
+      server.handleMessage(socket, { type: 'start', cols: 80, rows: 24 });
+      const deadline = Date.now() + 3000;
+      let output = '';
+      while (Date.now() < deadline && !output.includes('hello-from-pty')) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        output = socket.sent.filter((m) => m.type === 'output').map((m) => m.data).join('');
+      }
+      assert.ok(output.includes('hello-from-pty'), `expected pty output, got: ${JSON.stringify(socket.sent)}`);
+      server.dropClient(socket);
     });
   });
 
-  describe('subscribedPaneIds', () => {
-    test('dedupes two sockets subscribed to the same pane', () => {
-      const server = new HerdrWebServer(makeConfig());
-      server.subscriptions.set(makeSocket(), 'pane-1');
-      server.subscriptions.set(makeSocket(), 'pane-1');
-      server.subscriptions.set(makeSocket(), 'pane-2');
-      assert.deepEqual(server.subscribedPaneIds().sort(), ['pane-1', 'pane-2']);
+  describe('push routes', () => {
+    test('GET /push/public-key returns the VAPID public key', async () => {
+      const server = makeServer();
+      const res = makeRes();
+      server.handleHttp({ url: '/push/public-key', method: 'GET', headers: {} }, res);
+      await res.finished;
+      assert.equal(res.statusCode, 200);
+      assert.deepEqual(JSON.parse(res.body), { publicKey: 'test-public-key' });
     });
 
-    test('returns an empty list with no subscriptions', () => {
-      const server = new HerdrWebServer(makeConfig());
-      assert.deepEqual(server.subscribedPaneIds(), []);
+    test('POST /push/subscribe stores a valid subscription', async () => {
+      const server = makeServer();
+      const res = makeRes();
+      server.handleHttp(makeJsonReq('POST', '/push/subscribe', { endpoint: 'https://push.example/abc', keys: {} }), res);
+      await res.finished;
+      assert.equal(res.statusCode, 200);
+      assert.equal(server.push.added.length, 1);
+    });
+
+    test('POST /push/subscribe rejects a body without an endpoint', async () => {
+      const server = makeServer();
+      const res = makeRes();
+      server.handleHttp(makeJsonReq('POST', '/push/subscribe', { nope: true }), res);
+      await res.finished;
+      assert.equal(res.statusCode, 400);
+    });
+
+    test('POST /push/unsubscribe removes by endpoint', async () => {
+      const server = makeServer();
+      const res = makeRes();
+      server.handleHttp(makeJsonReq('POST', '/push/unsubscribe', { endpoint: 'https://push.example/abc' }), res);
+      await res.finished;
+      assert.equal(res.statusCode, 200);
+      assert.deepEqual(server.push.removed, ['https://push.example/abc']);
+    });
+
+    test('unknown push route is a 404', async () => {
+      const server = makeServer();
+      const res = makeRes();
+      server.handleHttp({ url: '/push/bogus', method: 'GET', headers: {} }, res);
+      await res.finished;
+      assert.equal(res.statusCode, 404);
+    });
+  });
+
+  describe('pushPayloadFor', () => {
+    test('blocked events say the agent needs attention', () => {
+      const payload = HerdrWebServer.pushPayloadFor({ agent: 'claude', title: 'fix bug', paneId: 'w1:p1', to: 'blocked' });
+      assert.deepEqual(payload, { title: 'claude needs attention', body: 'fix bug', tag: 'w1:p1' });
+    });
+
+    test('finished events include the new state and fall back to pane id', () => {
+      const payload = HerdrWebServer.pushPayloadFor({ paneId: 'w1:p1', to: 'idle', from: 'working' });
+      assert.deepEqual(payload, { title: 'agent finished (idle)', body: 'w1:p1', tag: 'w1:p1' });
     });
   });
 
   describe('send', () => {
     test('skips sockets that are not open', () => {
-      const server = new HerdrWebServer(makeConfig());
+      const server = makeServer();
       const socket = makeSocket();
       socket.readyState = 3;
       server.send(socket, { type: 'topology' });

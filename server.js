@@ -8,7 +8,8 @@ const { WebSocketServer } = require('ws');
 
 const { loadConfig } = require('./lib/config');
 const herdr = require('./lib/herdr');
-const { ansiToHtml } = require('./lib/ansi');
+const { PtySession } = require('./lib/pty-session');
+const { PushService } = require('./lib/push-service');
 const { StateWatcher } = require('./lib/state-watcher');
 
 class HerdrWebServer {
@@ -23,30 +24,23 @@ class HerdrWebServer {
         '.svg': 'image/svg+xml',
         '.png': 'image/png',
         '.ico': 'image/x-icon',
+        '.woff2': 'font/woff2',
     };
 
-    constructor(config) {
+    static MAX_PUSH_BODY_BYTES = 16 * 1024;
+
+    constructor(config, pushService = new PushService()) {
         this.config = config;
         this.watcher = new StateWatcher();
+        this.push = pushService;
         this.clients = new Set();
-        this.subscriptions = new Map();
+        this.ptyBySocket = new Map();
         this.lastTopology = null;
-        this.lastPaneHtml = new Map();
         this.topologyTimer = null;
-        this.paneTimer = null;
-        this.sendChain = Promise.resolve();
-    }
-
-    // keystrokes must reach the pane in the order they were typed — WS messages
-    // are handled concurrently, so writes are serialized through one chain
-    enqueueSend(operation) {
-        const next = this.sendChain.then(operation, operation);
-        this.sendChain = next.catch(() => {});
-        return next;
     }
 
     start() {
-        const httpServer = http.createServer((req, res) => this.serveStatic(req, res));
+        const httpServer = http.createServer((req, res) => this.handleHttp(req, res));
         httpServer.on('error', (error) => {
             if (error.code === 'EADDRINUSE') {
                 process.stderr.write(`herdr-web: ${this.config.host}:${this.config.port} is already in use — is another instance running?\n`);
@@ -64,7 +58,6 @@ class HerdrWebServer {
             process.stdout.write(`herdr-web listening on http://${this.config.host}:${this.config.port}\n`);
         });
         this.topologyTimer = setInterval(() => this.pollTopology(), this.config.topologyPollMs);
-        this.paneTimer = setInterval(() => this.pollSubscribedPanes(), this.config.panePollMs);
         this.pollTopology();
     }
 
@@ -86,8 +79,7 @@ class HerdrWebServer {
         return originUrl.host === req.headers.host;
     }
 
-    serveStatic(req, res) {
-        const { PUBLIC_DIR } = HerdrWebServer;
+    handleHttp(req, res) {
         let requestPath;
         try {
             requestPath = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
@@ -101,6 +93,65 @@ class HerdrWebServer {
             res.end('bad request');
             return;
         }
+        if (requestPath.startsWith('/push/')) {
+            this.handlePushRoute(req, res, requestPath);
+            return;
+        }
+        this.serveStatic(requestPath, res);
+    }
+
+    handlePushRoute(req, res, requestPath) {
+        const respond = (status, payload) => {
+            res.writeHead(status, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(payload));
+        };
+        if (requestPath === '/push/public-key' && req.method === 'GET') {
+            respond(200, { publicKey: this.push.publicKey });
+            return;
+        }
+        if ((requestPath === '/push/subscribe' || requestPath === '/push/unsubscribe') && req.method === 'POST') {
+            this.readJsonBody(req)
+                .then((body) => {
+                    if (requestPath === '/push/subscribe') {
+                        const added = this.push.addSubscription(body);
+                        respond(added ? 200 : 400, { ok: added });
+                        return;
+                    }
+                    const removed = this.push.removeSubscription(body?.endpoint);
+                    respond(200, { ok: removed });
+                })
+                .catch(() => respond(400, { ok: false }));
+            return;
+        }
+        respond(404, { ok: false });
+    }
+
+    readJsonBody(req) {
+        return new Promise((resolve, reject) => {
+            let size = 0;
+            const chunks = [];
+            req.on('data', (chunk) => {
+                size += chunk.length;
+                if (size > HerdrWebServer.MAX_PUSH_BODY_BYTES) {
+                    reject(new Error('body too large'));
+                    req.destroy();
+                    return;
+                }
+                chunks.push(chunk);
+            });
+            req.on('end', () => {
+                try {
+                    resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+                } catch (error) {
+                    reject(error);
+                }
+            });
+            req.on('error', reject);
+        });
+    }
+
+    serveStatic(requestPath, res) {
+        const { PUBLIC_DIR } = HerdrWebServer;
         const relative = requestPath === '/' ? 'index.html' : requestPath.replace(/^\/+/, '');
         const filePath = path.join(PUBLIC_DIR, relative);
         if (!filePath.startsWith(PUBLIC_DIR + path.sep) && filePath !== path.join(PUBLIC_DIR, 'index.html')) {
@@ -123,16 +174,22 @@ class HerdrWebServer {
     onConnection(socket) {
         this.clients.add(socket);
         socket.on('message', (raw) => this.onMessage(socket, raw));
-        socket.on('close', () => {
-            this.clients.delete(socket);
-            this.subscriptions.delete(socket);
-        });
+        socket.on('close', () => this.dropClient(socket));
         if (this.lastTopology) {
             this.send(socket, this.lastTopology);
         }
     }
 
-    async onMessage(socket, raw) {
+    dropClient(socket) {
+        this.clients.delete(socket);
+        const session = this.ptyBySocket.get(socket);
+        if (session) {
+            session.kill();
+            this.ptyBySocket.delete(socket);
+        }
+    }
+
+    onMessage(socket, raw) {
         let message;
         try {
             message = JSON.parse(String(raw));
@@ -141,38 +198,50 @@ class HerdrWebServer {
             return;
         }
         try {
-            await this.handleMessage(socket, message);
+            this.handleMessage(socket, message);
         } catch (error) {
             this.send(socket, { type: 'error', message: error.message });
         }
     }
 
-    async handleMessage(socket, message) {
-        const { type, paneId } = message;
-        if (type === 'subscribe' && typeof paneId === 'string') {
-            this.subscriptions.set(socket, paneId);
-            await this.pushPaneOutput(paneId, { force: true });
+    handleMessage(socket, message) {
+        const { type } = message;
+        if (type === 'start' && !this.ptyBySocket.has(socket)) {
+            this.startTerminal(socket, message);
             return;
         }
-        if (type === 'unsubscribe') {
-            this.subscriptions.delete(socket);
+        if (type === 'input' && typeof message.data === 'string') {
+            this.ptyBySocket.get(socket)?.write(message.data);
             return;
         }
-        if (type === 'send_text' && typeof paneId === 'string' && typeof message.text === 'string') {
-            await this.enqueueSend(() => herdr.sendText(paneId, message.text));
-            await this.pushPaneOutput(paneId, { force: true });
-            return;
-        }
-        if (type === 'send_keys' && typeof paneId === 'string' && Array.isArray(message.keys) && message.keys.length > 0) {
-            await this.enqueueSend(() => herdr.sendKeys(paneId, message.keys.map(String)));
-            await this.pushPaneOutput(paneId, { force: true });
+        if (type === 'resize') {
+            this.ptyBySocket.get(socket)?.resize(message.cols, message.rows);
             return;
         }
         if (type === 'refresh_topology') {
-            await this.pollTopology();
+            this.pollTopology();
             return;
         }
         this.send(socket, { type: 'error', message: `unknown message type: ${String(type)}` });
+    }
+
+    // each browser client gets its own PTY attached to the herdr TUI, exactly
+    // like a terminal window — herdr multiplexes concurrent attachments itself
+    startTerminal(socket, { cols, rows }) {
+        const session = new PtySession({
+            command: process.env.HERDR_BIN_PATH || 'herdr',
+            args: this.config.herdrArgs,
+        });
+        session.start({
+            cols,
+            rows,
+            onData: (data) => this.send(socket, { type: 'output', data }),
+            onExit: ({ exitCode }) => {
+                this.send(socket, { type: 'exit', code: exitCode });
+                this.ptyBySocket.delete(socket);
+            },
+        });
+        this.ptyBySocket.set(socket, session);
     }
 
     async pollTopology() {
@@ -186,49 +255,22 @@ class HerdrWebServer {
         }
         this.lastTopology = { type: 'topology', workspaces, panes };
         this.broadcast(this.lastTopology);
-        const livePaneIds = new Set(panes.map((pane) => pane.pane_id));
-        for (const paneId of this.lastPaneHtml.keys()) {
-            if (!livePaneIds.has(paneId)) {
-                this.lastPaneHtml.delete(paneId);
-            }
-        }
         const events = this.watcher.update(panes);
         for (const event of events) {
             this.broadcast({ type: 'agent_event', event });
-        }
-    }
-
-    subscribedPaneIds() {
-        return [...new Set(this.subscriptions.values())];
-    }
-
-    async pollSubscribedPanes() {
-        const paneIds = this.subscribedPaneIds();
-        await Promise.all(paneIds.map((paneId) => this.pushPaneOutput(paneId)));
-    }
-
-    async pushPaneOutput(paneId, { force = false } = {}) {
-        let text;
-        try {
-            text = await herdr.readPane(paneId, { lines: this.config.readLines, format: 'ansi' });
-        } catch (error) {
-            this.broadcastToSubscribers(paneId, { type: 'error', message: `pane read failed: ${error.message}` });
-            return;
-        }
-        const html = ansiToHtml(text);
-        if (!force && this.lastPaneHtml.get(paneId) === html) {
-            return;
-        }
-        this.lastPaneHtml.set(paneId, html);
-        this.broadcastToSubscribers(paneId, { type: 'pane_output', paneId, html });
-    }
-
-    broadcastToSubscribers(paneId, payload) {
-        for (const [socket, subscribedId] of this.subscriptions) {
-            if (subscribedId === paneId) {
-                this.send(socket, payload);
+            if (event.notifyWorthy) {
+                void this.push.notifyAll(HerdrWebServer.pushPayloadFor(event));
             }
         }
+    }
+
+    static pushPayloadFor(event) {
+        const agent = event.agent || 'agent';
+        const where = event.title || event.paneId;
+        if (event.to === 'blocked') {
+            return { title: `${agent} needs attention`, body: where, tag: event.paneId };
+        }
+        return { title: `${agent} finished (${event.to})`, body: where, tag: event.paneId };
     }
 
     broadcast(payload) {

@@ -54,23 +54,16 @@ describe('config', () => {
         host: '127.0.0.1',
         port: 7936,
         topologyPollMs: 2000,
-        panePollMs: 1000,
-        readLines: 200,
         allowedOrigins: [],
+        herdrArgs: [],
       });
     });
 
-    test('non-numeric poll and readLines values fall back to defaults', () => {
+    test('non-numeric poll values fall back to defaults', () => {
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'herdr-web-config-'));
-      fs.writeFileSync(
-        path.join(dir, 'config.json'),
-        JSON.stringify({ topologyPollMs: 'fast', panePollMs: {}, readLines: 'lots' })
-      );
+      fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ topologyPollMs: 'fast' }));
       process.env.HERDR_PLUGIN_CONFIG_DIR = dir;
-      const config = loadConfig();
-      assert.equal(config.topologyPollMs, DEFAULTS.topologyPollMs);
-      assert.equal(config.panePollMs, DEFAULTS.panePollMs);
-      assert.equal(config.readLines, DEFAULTS.readLines);
+      assert.equal(loadConfig().topologyPollMs, DEFAULTS.topologyPollMs);
     });
 
     test('non-array allowedOrigins falls back to default', () => {
@@ -102,10 +95,9 @@ describe('config', () => {
 
     test('merges config file values over defaults', () => {
       const dir = useTempConfigDir();
-      writeConfigFile(dir, { port: 8080, readLines: 50 });
+      writeConfigFile(dir, { port: 8080 });
       const config = loadConfig();
       assert.equal(config.port, 8080);
-      assert.equal(config.readLines, 50);
       assert.equal(config.host, DEFAULTS.host);
       assert.equal(config.topologyPollMs, DEFAULTS.topologyPollMs);
     });
@@ -148,29 +140,16 @@ describe('config', () => {
 
     test('poll intervals are clamped to at least 250ms', () => {
       const dir = useTempConfigDir();
-      writeConfigFile(dir, { topologyPollMs: 100, panePollMs: 5 });
-      const config = loadConfig();
-      assert.equal(config.topologyPollMs, 250);
-      assert.equal(config.panePollMs, 250);
+      writeConfigFile(dir, { topologyPollMs: 100 });
+      assert.equal(loadConfig().topologyPollMs, 250);
     });
 
     test('poll intervals above the minimum pass through unchanged', () => {
       const dir = useTempConfigDir();
-      writeConfigFile(dir, { topologyPollMs: 5000, panePollMs: 300 });
-      const config = loadConfig();
-      assert.equal(config.topologyPollMs, 5000);
-      assert.equal(config.panePollMs, 300);
+      writeConfigFile(dir, { topologyPollMs: 5000 });
+      assert.equal(loadConfig().topologyPollMs, 5000);
     });
 
-    test('readLines is clamped to the 10-2000 range', () => {
-      const dir = useTempConfigDir();
-      writeConfigFile(dir, { readLines: 5 });
-      assert.equal(loadConfig().readLines, 10);
-      writeConfigFile(dir, { readLines: 99999 });
-      assert.equal(loadConfig().readLines, 2000);
-      writeConfigFile(dir, { readLines: 500 });
-      assert.equal(loadConfig().readLines, 500);
-    });
 
     test('corrupt JSON in the config file keeps defaults', () => {
       const dir = useTempConfigDir();
@@ -189,10 +168,9 @@ describe('config', () => {
 
     test('loadConfig does not mutate DEFAULTS', () => {
       const dir = useTempConfigDir();
-      writeConfigFile(dir, { port: 8080, readLines: 5 });
+      writeConfigFile(dir, { port: 8080 });
       loadConfig();
       assert.equal(DEFAULTS.port, 7936);
-      assert.equal(DEFAULTS.readLines, 200);
     });
   });
 });

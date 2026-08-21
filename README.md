@@ -1,9 +1,10 @@
 # herdr-web
 
-Mobile-first web UI plugin for [herdr](https://herdr.dev) — view and drive your coding-agent
-panes from a phone browser, with notifications when an agent finishes or gets stuck.
-Fits desktops too: at wide viewports the pane list becomes a sidebar next to a full-height
-terminal.
+The full [herdr](https://herdr.dev) TUI in your browser — a web terminal (xterm.js over a
+server-side PTY) that runs the real `herdr` client, so everything works exactly like your
+terminal: tabs, panes, the sidebar, prefix keys, mouse — from a phone or any desktop browser.
+On top of it: **Web Push notifications** when an agent finishes or gets stuck, delivered by
+Chrome/Edge even when the page is closed.
 
 <p align="center"><img src="assets/demo.gif" width="320" alt="phone demo" /></p>
 
@@ -11,33 +12,35 @@ terminal.
 
 ## Features
 
-- **Live pane view** — rendered terminal output (ANSI colors preserved) streamed over WebSocket.
-- **Agent state at a glance** — every pane is a chip with a status dot (amber = working,
-  green = idle, red = blocked); the top bar shows the whole herd as a dot strip.
-- **Type straight into the terminal** — tap/click the pane view and just type: keystrokes
-  (letters, `Enter`, `Backspace`, arrows, `Ctrl+…`, `F1–F12`) stream to the pane in order, no
-  separate input box. A quick-keys bar covers keys phone keyboards lack (`esc`, `tab`, arrows,
-  `ctrl+c`, `enter`).
-- **Notifications** — toggle the bell in the top bar; when an agent transitions out of
-  `working` or into `blocked`, you get a browser/PWA notification (and an in-app toast).
-- **Installable PWA** — add to home screen; app shell works offline.
-- **Nerd Font icons** — ships Symbols Nerd Font Mono (MIT) as a glyph fallback, so file-manager/sidebar panes (yazi, nvim trees) render their icons on any device.
+- **The real herdr TUI** — not a re-implementation: the server spawns `herdr` in a PTY per
+  browser tab and streams it to xterm.js. Native typing, full keyboard, resize-aware reflow.
+- **Web Push notifications** — toggle the bell: the server keeps VAPID keys and your push
+  subscription, and when an agent transitions out of `working` or into `blocked`, the browser's
+  push service (FCM for Chrome/Edge) delivers a **system notification on desktop and mobile,
+  even with the page closed**. In-app toasts mirror every event while the page is open.
+- **Agent herd strip** — the top bar shows one status dot per agent pane (amber = working,
+  green = idle, red = blocked), fed by a CLI topology poller independent of the terminal stream.
+- **Quick-keys bar** — `prefix` (ctrl+a), `esc`, `tab`, arrows, `ctrl+c`, `enter` for keys phone
+  keyboards lack.
+- **Installable PWA** with Nerd Font glyphs bundled (Symbols Nerd Font Mono, MIT), so the TUI's
+  icons render on any device.
 
 ## Architecture
 
 ```
-herdr CLI (HERDR_BIN_PATH)
-        ▲  pane list / pane read --format ansi / pane send-*
-        │  (JSON envelope parsing, polling with change detection)
-   server.js  ──►  lib/ansi.js (ANSI → HTML) · lib/state-watcher.js (agent transitions)
-        │  HTTP (static public/) + WebSocket (/ws)
-        ▼
-   React client (client/ → built into public/, committed to git)
+        herdr TUI (one PTY per browser tab, node-pty)          herdr CLI
+        ▲ │ raw terminal bytes                                 ▲ pane list (agent states)
+        │ ▼                                                    │
+   server.js ── WebSocket /ws (input/resize/output JSON) ── state-watcher ── web-push (VAPID)
+        │  HTTP: static public/ + /push/* endpoints                              │
+        ▼                                                                        ▼
+   React + xterm.js client (client/ → built into public/, committed)   Chrome/Edge push service
 ```
 
 The production client build is **committed to git**, so installing the plugin never needs a
-frontend build — the manifest's `[[build]]` step only installs the server's single runtime
-dependency (`ws`).
+frontend build — the manifest's `[[build]]` step installs the server's runtime deps (`ws`,
+`node-pty`, `web-push`; node-pty uses prebuilt binaries, and a postinstall step restores the
+exec bit npm strips from its spawn helper).
 
 ## Install
 
@@ -75,12 +78,13 @@ All keys (every one optional):
     "host": "127.0.0.1",
     "port": 7936,
     "topologyPollMs": 2000,
-    "panePollMs": 1000,
-    "readLines": 200
+    "allowedOrigins": [],
+    "herdrArgs": []
 }
 ```
 
-`HERDR_WEB_HOST` / `HERDR_WEB_PORT` env vars override the file.
+`HERDR_WEB_HOST` / `HERDR_WEB_PORT` env vars override the file. `herdrArgs` is passed to the
+spawned `herdr` TUI (e.g. `["--session", "web"]` to attach browsers to a separate named session).
 
 ## Phone access & notifications
 
@@ -97,9 +101,13 @@ authenticated. To use it from a phone:
   on mobile.
 - Any other authenticated HTTPS reverse proxy works the same way.
 
-Notifications use the Notification API via the service worker while the page/PWA is open
-(foreground or background). True Web Push (VAPID, works with the browser fully closed) is out
-of scope for v1.
+Notifications are real **Web Push**: the bell subscribes through the browser's push service and
+the plugin's server (which generates and stores its VAPID keys in the plugin state dir) pushes
+agent events to it — so Chrome/Edge show system notifications on desktop and Android even when
+the page is closed. Push requires a secure context: HTTPS (Tailscale) or localhost. If the
+browser has the permission blocked, the bell copies your browser's notification-settings address
+to the clipboard so you can unblock the site. Where push is unavailable, the bell falls back to
+page-side notifications while the app is open.
 
 ## Development
 

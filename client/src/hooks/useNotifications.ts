@@ -1,39 +1,68 @@
 import { useCallback, useEffect, useState } from 'react';
 import { formatAgentNotification } from '../lib/notifications';
+import { subscribeToPush, unsubscribeFromPush } from '../lib/push';
 import type { AgentEvent } from '../types';
 
 const STORAGE_KEY = 'herdr-web:notifications-enabled';
+const MODE_STORAGE_KEY = 'herdr-web:notifications-mode';
+
+export type NotificationMode = 'push' | 'local';
+export type NotificationToggleResult = 'enabled-push' | 'enabled-local' | 'disabled' | 'unsupported' | 'denied';
 
 export interface NotificationControls {
     readonly enabled: boolean;
-    readonly toggle: () => Promise<void>;
+    readonly toggle: () => Promise<NotificationToggleResult>;
     readonly notifyForEvent: (event: AgentEvent) => Promise<void>;
 }
 
 export function useNotifications(): NotificationControls {
     const [enabled, setEnabled] = useState(() => localStorage.getItem(STORAGE_KEY) === 'true');
+    const [mode, setMode] = useState<NotificationMode>(() =>
+        localStorage.getItem(MODE_STORAGE_KEY) === 'local' ? 'local' : 'push',
+    );
 
     useEffect(() => {
         localStorage.setItem(STORAGE_KEY, String(enabled));
-    }, [enabled]);
+        localStorage.setItem(MODE_STORAGE_KEY, mode);
+    }, [enabled, mode]);
 
-    const toggle = useCallback(async () => {
+    const toggle = useCallback(async (): Promise<NotificationToggleResult> => {
         if (enabled) {
             setEnabled(false);
-            return;
+            try {
+                await unsubscribeFromPush();
+            } catch {}
+            return 'disabled';
         }
         if (!('Notification' in window)) {
-            return;
+            return 'unsupported';
         }
         const permission = await Notification.requestPermission();
-        if (permission === 'granted') {
-            setEnabled(true);
+        if (permission !== 'granted') {
+            return 'denied';
         }
+        // real Web Push first (browser delivers system notifications even with the
+        // page closed); page-side notifications remain as the fallback
+        try {
+            const subscription = await subscribeToPush();
+            if (subscription) {
+                setMode('push');
+                setEnabled(true);
+                return 'enabled-push';
+            }
+        } catch (err) {
+            if (err instanceof Error) {
+                console.error('push subscription failed:', err.message);
+            }
+        }
+        setMode('local');
+        setEnabled(true);
+        return 'enabled-local';
     }, [enabled]);
 
     const notifyForEvent = useCallback(
         async (event: AgentEvent) => {
-            if (!enabled || !event.notifyWorthy) {
+            if (!enabled || mode === 'push' || !event.notifyWorthy) {
                 return;
             }
             if (!('Notification' in window) || Notification.permission !== 'granted') {
@@ -47,7 +76,7 @@ export function useNotifications(): NotificationControls {
             }
             new Notification(title, { body, icon: '/icon-192.png', tag: event.paneId });
         },
-        [enabled],
+        [enabled, mode],
     );
 
     return { enabled, toggle, notifyForEvent };

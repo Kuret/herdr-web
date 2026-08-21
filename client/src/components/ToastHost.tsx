@@ -11,6 +11,12 @@ function allocateToastId(): number {
     return nextToastId;
 }
 
+export interface Notice {
+    readonly id: number;
+    readonly text: string;
+    readonly tone: 'info' | 'warn';
+}
+
 interface Toast {
     readonly id: number;
     readonly className: string;
@@ -20,9 +26,10 @@ interface Toast {
 interface ToastHostProps {
     readonly event: AgentEvent | null;
     readonly error: string | null;
+    readonly notice: Notice | null;
 }
 
-export function ToastHost({ event, error }: ToastHostProps) {
+export function ToastHost({ event, error, notice }: ToastHostProps) {
     const [toasts, setToasts] = useState<Toast[]>([]);
 
     useEffect(() => {
@@ -41,6 +48,18 @@ export function ToastHost({ event, error }: ToastHostProps) {
         pushToast({ id: allocateToastId(), className: 'toast toast-blocked', text: error });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [error]);
+
+    useEffect(() => {
+        if (!notice) {
+            return;
+        }
+        pushToast({
+            id: allocateToastId(),
+            className: notice.tone === 'warn' ? 'toast toast-blocked' : 'toast toast-done',
+            text: notice.text,
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [notice]);
 
     function pushToast(toast: Toast) {
         setToasts((current) => [...current, toast]);

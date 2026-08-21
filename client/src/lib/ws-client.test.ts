@@ -144,7 +144,7 @@ describe('HerdrSocket', () => {
         client.connect();
         const socket = latestSocket();
         socket.readyState = MockWebSocket.OPEN;
-        const message: ClientMessage = { type: 'subscribe', paneId: 'w1:p1' };
+        const message: ClientMessage = { type: 'input', data: 'ls' };
         client.send(message);
         expect(socket.sent).toEqual([JSON.stringify(message)]);
     });

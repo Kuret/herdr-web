@@ -102,6 +102,35 @@ body {
     flex: none;
 }
 
+.status-working {
+    background: var(--working);
+    animation: pulse 1.4s ease-in-out infinite;
+}
+
+.status-idle {
+    background: var(--idle);
+}
+
+.status-blocked {
+    background: var(--blocked);
+}
+
+.status-unknown {
+    background: var(--unknown);
+}
+
+@keyframes pulse {
+    50% {
+        opacity: 0.35;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .status-working {
+        animation: none;
+    }
+}
+
 .icon-btn {
     display: flex;
     align-items: center;
@@ -121,147 +150,17 @@ body {
     border-color: var(--working);
 }
 
-/* ---------- pane tabs ---------- */
-.pane-tabs {
-    display: flex;
-    gap: 8px;
-    padding: 10px 14px;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    border-bottom: 1px solid var(--border);
-    background: var(--bg);
-    scrollbar-width: none;
-}
-
-.pane-tabs::-webkit-scrollbar {
-    display: none;
-}
-
-.pane-chip {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-height: var(--touch);
-    padding: 0 14px;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    background: var(--panel);
-    color: var(--text-dim);
-    font-family: var(--mono);
-    font-size: 13px;
-    white-space: nowrap;
-    cursor: pointer;
-    transition: border-color 150ms ease, color 150ms ease;
-}
-
-.pane-chip.active {
-    color: var(--text);
-    border-color: var(--accent);
-    background: var(--panel-raised);
-}
-
-.status-dot {
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
-    flex: none;
-    background: var(--unknown);
-}
-
-.status-working {
-    background: var(--working);
-    animation: pulse 1.4s ease-in-out infinite;
-}
-
-.status-idle {
-    background: var(--idle);
-}
-
-.status-blocked {
-    background: var(--blocked);
-}
-
-@keyframes pulse {
-    50% {
-        opacity: 0.35;
-    }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .status-working {
-        animation: none;
-    }
-}
-
-.chip-ws {
-    color: var(--text-dim);
-    font-size: 11px;
-}
-
 /* ---------- terminal ---------- */
-.terminal-wrap {
-    position: relative;
+.xterm-wrap {
     flex: 1;
     min-height: max(220px, 35dvh);
+    padding: 6px 4px 0 8px;
     background: var(--bg);
+    overflow: hidden;
 }
 
-.terminal {
+.xterm-wrap .xterm {
     height: 100%;
-    margin: 0;
-    padding: 12px 14px;
-    overflow: auto;
-    font-family: var(--mono);
-    font-size: 12.5px;
-    line-height: 1.45;
-    white-space: pre-wrap;
-    word-break: break-word;
-    color: var(--text);
-}
-
-.empty-state {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-    color: var(--text-dim);
-    font-family: var(--mono);
-    font-size: 14px;
-}
-
-.empty-state p {
-    margin: 0;
-}
-
-.empty-hint {
-    font-size: 12px;
-    opacity: 0.7;
-}
-
-.hidden {
-    display: none !important;
-}
-
-/* invisible focus target: typing lands in the pane, phone keyboards open on tap */
-.typing-input {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    border: none;
-    opacity: 0;
-    background: transparent;
-    color: transparent;
-    pointer-events: none;
-}
-
-.terminal-wrap:focus-within {
-    box-shadow: inset 0 0 0 1px var(--accent);
 }
 
 /* ---------- composer ---------- */
@@ -309,7 +208,7 @@ body {
 }
 
 button:focus-visible,
-input:not(.typing-input):focus-visible,
+input:focus-visible,
 .terminal:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 1px;
@@ -348,88 +247,10 @@ input:not(.typing-input):focus-visible,
     border-left-color: var(--idle);
 }
 
-/* ---------- ANSI palette (classes emitted by lib/ansi.js) ---------- */
-.af-0 { color: #3b4252; }
-.af-1 { color: #ff6b6b; }
-.af-2 { color: #3ddc84; }
-.af-3 { color: #f5c463; }
-.af-4 { color: #6fa8ff; }
-.af-5 { color: #c792ea; }
-.af-6 { color: #56c8d8; }
-.af-7 { color: #d8dee9; }
-.af-8 { color: #6b7683; }
-.af-9 { color: #ff8f8f; }
-.af-10 { color: #63e6a5; }
-.af-11 { color: #ffd57e; }
-.af-12 { color: #8ab8ff; }
-.af-13 { color: #dfa9f0; }
-.af-14 { color: #7adfe9; }
-.af-15 { color: #f4f7fa; }
-.ab-0 { background: #3b4252; }
-.ab-1 { background: #ff6b6b; }
-.ab-2 { background: #3ddc84; }
-.ab-3 { background: #f5c463; }
-.ab-4 { background: #6fa8ff; }
-.ab-5 { background: #c792ea; }
-.ab-6 { background: #56c8d8; }
-.ab-7 { background: #d8dee9; }
-.ab-8 { background: #6b7683; }
-.ab-9 { background: #ff8f8f; }
-.ab-10 { background: #63e6a5; }
-.ab-11 { background: #ffd57e; }
-.ab-12 { background: #8ab8ff; }
-.ab-13 { background: #dfa9f0; }
-.ab-14 { background: #7adfe9; }
-.ab-15 { background: #f4f7fa; }
-
 /* wider screens: cap content width, keep the phone feel */
-/* desktop: pane list becomes a left sidebar, terminal takes the rest */
+/* desktop: single column, larger type */
 @media (min-width: 900px) {
-    #root {
-        display: grid;
-        grid-template-columns: 280px 1fr;
-        grid-template-rows: auto 1fr auto;
-        grid-template-areas:
-            'topbar topbar'
-            'sidebar main'
-            'sidebar composer';
-    }
-
-    .topbar {
-        grid-area: topbar;
-    }
-
-    .pane-tabs {
-        grid-area: sidebar;
-        flex-direction: column;
-        align-items: stretch;
-        overflow-y: auto;
-        overflow-x: hidden;
-        border-bottom: none;
-        border-right: 1px solid var(--border);
-        background: var(--panel);
-    }
-
-    .pane-chip {
-        justify-content: flex-start;
-        text-align: left;
-    }
-
-    .pane-chip span:nth-child(2) {
-        flex: 1;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    .terminal-wrap {
-        grid-area: main;
-    }
-
-    .composer {
-        grid-area: composer;
-    }
-
-    .terminal {
+    .xterm-wrap .xterm {
         font-size: 14px;
     }
 
@@ -437,13 +258,4 @@ input:not(.typing-input):focus-visible,
         flex-wrap: wrap;
         overflow-x: visible;
     }
-}
-
-.status-unknown {
-    background: var(--unknown);
-}
-
-.key-btn:disabled {
-    opacity: 0.45;
-    cursor: default;
 }

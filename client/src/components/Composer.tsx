@@ -1,22 +1,23 @@
-const QUICK_KEYS: ReadonlyArray<{ label: string; keys: string[]; danger?: boolean }> = [
-    { label: 'esc', keys: ['esc'] },
-    { label: 'tab', keys: ['tab'] },
-    { label: '↑', keys: ['up'] },
-    { label: '↓', keys: ['down'] },
-    { label: '←', keys: ['left'] },
-    { label: '→', keys: ['right'] },
-    { label: 'ctrl·c', keys: ['ctrl+c'], danger: true },
-    { label: '⏎', keys: ['enter'] },
+const QUICK_KEYS: ReadonlyArray<{ label: string; bytes: string; danger?: boolean }> = [
+    { label: 'prefix', bytes: '\x01' },
+    { label: 'esc', bytes: '\x1b' },
+    { label: 'tab', bytes: '\t' },
+    { label: '↑', bytes: '\x1b[A' },
+    { label: '↓', bytes: '\x1b[B' },
+    { label: '←', bytes: '\x1b[D' },
+    { label: '→', bytes: '\x1b[C' },
+    { label: 'ctrl·c', bytes: '\x03', danger: true },
+    { label: '⏎', bytes: '\r' },
 ];
 
 interface ComposerProps {
     readonly disabled: boolean;
-    readonly onSendKeys: (keys: string[]) => void;
+    readonly onSendBytes: (bytes: string) => void;
 }
 
 // quick-keys bar for keys phone keyboards don't have — typing itself happens
-// directly in the terminal (tap it to summon the keyboard)
-export function Composer({ disabled, onSendKeys }: ComposerProps) {
+// directly in the terminal; "prefix" sends herdr's default ctrl+a
+export function Composer({ disabled, onSendBytes }: ComposerProps) {
     return (
         <footer className="composer">
             <div className="quick-keys" role="toolbar" aria-label="quick keys">
@@ -26,7 +27,7 @@ export function Composer({ disabled, onSendKeys }: ComposerProps) {
                         type="button"
                         className={key.danger ? 'key-btn key-danger' : 'key-btn'}
                         disabled={disabled}
-                        onClick={() => onSendKeys(key.keys)}
+                        onClick={() => onSendBytes(key.bytes)}
                     >
                         {key.label}
                     </button>
