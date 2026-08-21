@@ -38,6 +38,10 @@ function makePushStub() {
     async notifyAll(payload) {
       this.notified.push(payload);
     },
+    async notifyOne(subscription, payload) {
+      this.notified.push({ ...payload, to: subscription.endpoint });
+      return true;
+    },
   };
 }
 

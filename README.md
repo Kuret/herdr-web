@@ -110,6 +110,11 @@ authenticated. To use it from a phone:
   on mobile.
 - Any other authenticated HTTPS reverse proxy works the same way.
 
+**For notifications, open the app on the HTTPS port** (HTTP port + 1, e.g.
+`https://<host>:7937`) or via localhost/Tailscale — browsers remove the Notification and Push
+APIs on plain-HTTP origins, so the bell can only work from a secure URL. Right after you enable
+the bell, a "Notifications connected" push confirms the whole pipeline end to end.
+
 Notifications are real **Web Push**: the bell subscribes through the browser's push service and
 the plugin's server (which generates and stores its VAPID keys in the plugin state dir) pushes
 agent events to it — so Chrome/Edge show system notifications on desktop and Android even when

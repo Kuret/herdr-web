@@ -136,6 +136,14 @@ class HerdrWebServer {
                 .then((body) => {
                     if (requestPath === '/push/subscribe') {
                         const added = this.push.addSubscription(body);
+                        if (added) {
+                            // immediate end-to-end proof for the user that push works
+                            void this.push.notifyOne(body, {
+                                title: 'Notifications connected',
+                                body: 'herdr-web will notify you when an agent finishes or gets stuck',
+                                tag: 'herdr-web-connected',
+                            });
+                        }
                         respond(added ? 200 : 400, { ok: added });
                         return;
                     }

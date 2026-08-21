@@ -26,6 +26,30 @@ export function useNotifications(): NotificationControls {
         localStorage.setItem(MODE_STORAGE_KEY, mode);
     }, [enabled, mode]);
 
+    // self-heal on load: "enabled" without a live push subscription is a silent
+    // black hole (bell enabled before push existed, cleared site data, or a
+    // server-state wipe) — re-subscribe idempotently and re-register server-side
+    useEffect(() => {
+        if (!enabled || mode !== 'push') {
+            return;
+        }
+        if (!('Notification' in window) || Notification.permission !== 'granted') {
+            return;
+        }
+        subscribeToPush()
+            .then((subscription) => {
+                if (!subscription) {
+                    setMode('local');
+                }
+            })
+            .catch((err: unknown) => {
+                if (err instanceof Error) {
+                    console.error('push re-sync failed:', err.message);
+                }
+            });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     const toggle = useCallback(async (): Promise<NotificationToggleResult> => {
         if (enabled) {
             setEnabled(false);
