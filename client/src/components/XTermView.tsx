@@ -26,11 +26,12 @@ const TERMINAL_THEME = {
 
 interface XTermViewProps {
     readonly connected: boolean;
+    readonly keyboardEnabled: boolean;
     readonly send: (message: ClientMessage) => void;
     readonly subscribeTerminal: (handler: (message: TerminalMessage) => void) => () => void;
 }
 
-export function XTermView({ connected, send, subscribeTerminal }: XTermViewProps) {
+export function XTermView({ connected, keyboardEnabled, send, subscribeTerminal }: XTermViewProps) {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const xtermRef = useRef<XTerm | null>(null);
     const fitAddonRef = useRef<FitAddon | null>(null);
@@ -93,6 +94,19 @@ export function XTermView({ connected, send, subscribeTerminal }: XTermViewProps
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    // touch devices: taps should navigate the TUI (mouse events) without popping
+    // the virtual keyboard — inputMode 'none' suppresses it until the ⌨ toggle
+    useEffect(() => {
+        const textarea = xtermRef.current?.textarea;
+        if (!textarea) {
+            return;
+        }
+        textarea.inputMode = keyboardEnabled ? 'text' : 'none';
+        if (keyboardEnabled) {
+            xtermRef.current?.focus();
+        }
+    }, [keyboardEnabled]);
 
     // every (re)connect gets a fresh server-side PTY, so restart the TUI stream
     useEffect(() => {

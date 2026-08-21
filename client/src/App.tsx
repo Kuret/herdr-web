@@ -19,10 +19,13 @@ const TOGGLE_NOTICES: Readonly<Record<NotificationToggleResult, Notice['text']>>
 
 let nextNoticeId = 0;
 
+const HAS_COARSE_POINTER = window.matchMedia('(pointer: coarse)').matches;
+
 export function App() {
     const { connected, panes, lastEvent, lastError, send, subscribeTerminal } = useHerdrSocket();
     const { enabled: notificationsEnabled, toggle: toggleNotifications, notifyForEvent } = useNotifications();
     const [notice, setNotice] = useState<Notice | null>(null);
+    const [keyboardEnabled, setKeyboardEnabled] = useState(!HAS_COARSE_POINTER);
 
     useEffect(() => {
         if (!lastEvent) {
@@ -30,6 +33,23 @@ export function App() {
         }
         void notifyForEvent(lastEvent);
     }, [lastEvent, notifyForEvent]);
+
+    // iOS ignores interactive-widget=resizes-content, so track the visual
+    // viewport by hand: the app shrinks and the quick-keys bar rides above the
+    // on-screen keyboard instead of being covered by it
+    useEffect(() => {
+        const viewport = window.visualViewport;
+        if (!viewport) {
+            return;
+        }
+        const apply = () => {
+            const keyboardShowing = viewport.height < window.innerHeight - 1;
+            document.documentElement.style.setProperty('--app-height', keyboardShowing ? `${viewport.height}px` : '100%');
+        };
+        viewport.addEventListener('resize', apply);
+        apply();
+        return () => viewport.removeEventListener('resize', apply);
+    }, []);
 
     const onToggleNotifications = async () => {
         const result = await toggleNotifications();
@@ -59,8 +79,13 @@ export function App() {
                 notificationsEnabled={notificationsEnabled}
                 onToggleNotifications={() => void onToggleNotifications()}
             />
-            <XTermView connected={connected} send={send} subscribeTerminal={subscribeTerminal} />
-            <Composer disabled={!connected} onSendBytes={(bytes) => send({ type: 'input', data: bytes })} />
+            <XTermView connected={connected} keyboardEnabled={keyboardEnabled} send={send} subscribeTerminal={subscribeTerminal} />
+            <Composer
+                disabled={!connected}
+                keyboardEnabled={keyboardEnabled}
+                onToggleKeyboard={() => setKeyboardEnabled((current) => !current)}
+                onSendBytes={(bytes) => send({ type: 'input', data: bytes })}
+            />
             <ToastHost event={lastEvent} error={lastError} notice={notice} />
         </>
     );
