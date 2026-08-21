@@ -1,6 +1,6 @@
 id = "barnuri.herdr-web"
 name = "Herdr Web"
-version = "0.1.0"
+version = "0.1.1"
 min_herdr_version = "0.7.0"
 description = "Mobile-first web UI for herdr — view and drive panes from a phone, with agent-state notifications"
 platforms = ["linux", "macos"]

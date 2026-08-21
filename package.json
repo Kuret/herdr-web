@@ -1,6 +1,6 @@
 {
     "name": "herdr-web",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "Mobile-first web UI plugin for herdr — view and drive panes from a phone browser, with agent-state notifications",
     "author": "barnuri",
     "license": "MIT",
