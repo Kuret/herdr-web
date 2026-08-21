@@ -22,12 +22,25 @@ const TOGGLE_NOTICES: Readonly<Record<NotificationToggleResult, Notice['text']>>
 let nextNoticeId = 0;
 
 const HAS_COARSE_POINTER = window.matchMedia('(pointer: coarse)').matches;
+const KEYBOARD_STORAGE_KEY = 'herdr-web:keyboard-enabled';
+
+function initialKeyboardEnabled(): boolean {
+    const stored = localStorage.getItem(KEYBOARD_STORAGE_KEY);
+    if (stored === 'true' || stored === 'false') {
+        return stored === 'true';
+    }
+    return !HAS_COARSE_POINTER;
+}
 
 export function App() {
     const { connected, panes, lastEvent, lastError, send, subscribeTerminal } = useHerdrSocket();
     const { enabled: notificationsEnabled, toggle: toggleNotifications, notifyForEvent } = useNotifications();
     const [notice, setNotice] = useState<Notice | null>(null);
-    const [keyboardEnabled, setKeyboardEnabled] = useState(!HAS_COARSE_POINTER);
+    const [keyboardEnabled, setKeyboardEnabled] = useState(initialKeyboardEnabled);
+
+    useEffect(() => {
+        localStorage.setItem(KEYBOARD_STORAGE_KEY, String(keyboardEnabled));
+    }, [keyboardEnabled]);
     const [help, setHelp] = useState<NotificationSettingsHelp | null>(null);
 
     useEffect(() => {
