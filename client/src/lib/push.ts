@@ -12,11 +12,23 @@ export function urlBase64ToUint8Array(base64Url: string): Uint8Array {
 
 export type PushSubscribeFailure = 'no-service-worker' | 'no-push-manager';
 
+const SERVICE_WORKER_READY_TIMEOUT_MS = 8000;
+
+// the service worker registers asynchronously on page load — a bell tap right
+// after the first visit must wait for activation, not read a racy getRegistration()
+async function waitForServiceWorker(): Promise<ServiceWorkerRegistration | null> {
+    if (!('serviceWorker' in navigator)) {
+        return null;
+    }
+    const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), SERVICE_WORKER_READY_TIMEOUT_MS));
+    return Promise.race([navigator.serviceWorker.ready, timeout]);
+}
+
 export async function subscribeToPush(): Promise<PushSubscription | PushSubscribeFailure> {
-    const registration = await navigator.serviceWorker?.getRegistration();
+    const registration = await waitForServiceWorker();
     if (!registration) {
-        // on a secure origin this almost always means the TLS cert isn't trusted,
-        // which makes the browser refuse to register the service worker
+        // ready never resolving on a secure origin almost always means the TLS
+        // cert isn't trusted, so the browser refused to register the worker
         return 'no-service-worker';
     }
     if (!('pushManager' in registration)) {
@@ -37,7 +49,7 @@ export async function subscribeToPush(): Promise<PushSubscription | PushSubscrib
 }
 
 export async function unsubscribeFromPush(): Promise<void> {
-    const registration = await navigator.serviceWorker?.getRegistration();
+    const registration = await waitForServiceWorker();
     const subscription = await registration?.pushManager?.getSubscription();
     if (!subscription) {
         return;

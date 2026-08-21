@@ -33,10 +33,12 @@ export function useNotifications(): NotificationControls {
     }, [enabled, mode]);
 
     // self-heal on load: "enabled" without a live push subscription is a silent
-    // black hole (bell enabled before push existed, cleared site data, or a
-    // server-state wipe) — re-subscribe idempotently and re-register server-side
+    // black hole (bell enabled before push existed, cleared site data, a server
+    // wipe, or push blocked at the time — e.g. before the cert was trusted).
+    // Try push whenever notifications are on: success upgrades local → push,
+    // failure downgrades push → local, so the stored mode always matches reality.
     useEffect(() => {
-        if (!enabled || mode !== 'push') {
+        if (!enabled) {
             return;
         }
         if (!('Notification' in window) || Notification.permission !== 'granted') {
@@ -44,9 +46,7 @@ export function useNotifications(): NotificationControls {
         }
         subscribeToPush()
             .then((outcome) => {
-                if (typeof outcome === 'string') {
-                    setMode('local');
-                }
+                setMode(typeof outcome === 'string' ? 'local' : 'push');
             })
             .catch((err: unknown) => {
                 if (err instanceof Error) {
