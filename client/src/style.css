@@ -272,3 +272,76 @@ input:focus-visible,
         display: none;
     }
 }
+
+/* ---------- notification help sheet ---------- */
+.sheet-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.55);
+}
+
+.sheet {
+    width: min(100%, 480px);
+    padding: 18px 18px calc(18px + env(safe-area-inset-bottom));
+    border: 1px solid var(--border);
+    border-radius: 16px 16px 0 0;
+    background: var(--panel-raised);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.sheet-title {
+    margin: 0;
+    font-size: 17px;
+    font-family: var(--mono);
+    color: var(--text);
+}
+
+.sheet-steps {
+    margin: 0;
+    padding-left: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.sheet-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: var(--touch);
+    padding: 0 16px;
+    border: 1px solid #3d4956;
+    border-radius: 10px;
+    background: #1c242c;
+    color: var(--text);
+    font-size: 15px;
+    text-decoration: none;
+    cursor: pointer;
+    word-break: break-all;
+}
+
+.sheet-btn-primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #05131f;
+    font-weight: 600;
+}
+
+@media (min-width: 900px) {
+    .sheet-backdrop {
+        align-items: center;
+    }
+
+    .sheet {
+        border-radius: 16px;
+    }
+}

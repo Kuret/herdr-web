@@ -2,9 +2,11 @@
 'use strict';
 
 const http = require('node:http');
+const https = require('node:https');
 const path = require('node:path');
 const fs = require('node:fs');
 const { WebSocketServer } = require('ws');
+const { loadTlsOptions } = require('./lib/tls');
 
 const { loadConfig } = require('./lib/config');
 const herdr = require('./lib/herdr');
@@ -40,25 +42,40 @@ class HerdrWebServer {
     }
 
     start() {
-        const httpServer = http.createServer((req, res) => this.handleHttp(req, res));
-        httpServer.on('error', (error) => {
+        this.startListener(http.createServer((req, res) => this.handleHttp(req, res)), this.config.port, 'http');
+        if (this.config.https) {
+            this.startHttps();
+        }
+        this.topologyTimer = setInterval(() => this.pollTopology(), this.config.topologyPollMs);
+        this.pollTopology();
+    }
+
+    startHttps() {
+        const tls = loadTlsOptions(this.config);
+        if (!tls) {
+            process.stderr.write('herdr-web: https disabled — no cert configured and openssl is unavailable to self-sign one\n');
+            return;
+        }
+        this.startListener(https.createServer(tls, (req, res) => this.handleHttp(req, res)), this.config.httpsPort, 'https');
+    }
+
+    startListener(server, port, scheme) {
+        server.on('error', (error) => {
             if (error.code === 'EADDRINUSE') {
-                process.stderr.write(`herdr-web: ${this.config.host}:${this.config.port} is already in use — is another instance running?\n`);
+                process.stderr.write(`herdr-web: ${this.config.host}:${port} is already in use — is another instance running?\n`);
                 process.exit(1);
             }
             throw error;
         });
-        this.wss = new WebSocketServer({
-            server: httpServer,
+        const wss = new WebSocketServer({
+            server,
             path: '/ws',
             verifyClient: ({ origin, req }) => this.isAllowedOrigin(origin, req),
         });
-        this.wss.on('connection', (socket) => this.onConnection(socket));
-        httpServer.listen(this.config.port, this.config.host, () => {
-            process.stdout.write(`herdr-web listening on http://${this.config.host}:${this.config.port}\n`);
+        wss.on('connection', (socket) => this.onConnection(socket));
+        server.listen(port, this.config.host, () => {
+            process.stdout.write(`herdr-web listening on ${scheme}://${this.config.host}:${port}\n`);
         });
-        this.topologyTimer = setInterval(() => this.pollTopology(), this.config.topologyPollMs);
-        this.pollTopology();
     }
 
     // browsers always send an Origin header on WebSocket upgrades; non-browser
@@ -95,6 +112,11 @@ class HerdrWebServer {
         }
         if (requestPath.startsWith('/push/')) {
             this.handlePushRoute(req, res, requestPath);
+            return;
+        }
+        if (requestPath === '/meta') {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ https: this.config.https, httpsPort: this.config.httpsPort }));
             return;
         }
         this.serveStatic(requestPath, res);

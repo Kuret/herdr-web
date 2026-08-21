@@ -77,6 +77,10 @@ All keys (every one optional):
 {
     "host": "127.0.0.1",
     "port": 7936,
+    "https": true,
+    "httpsPort": null,
+    "httpsCertPath": null,
+    "httpsKeyPath": null,
     "topologyPollMs": 2000,
     "allowedOrigins": [],
     "herdrArgs": []
@@ -85,6 +89,11 @@ All keys (every one optional):
 
 `HERDR_WEB_HOST` / `HERDR_WEB_PORT` env vars override the file. `herdrArgs` is passed to the
 spawned `herdr` TUI (e.g. `["--session", "web"]` to attach browsers to a separate named session).
+
+HTTPS is served **alongside** HTTP: `httpsPort` defaults to the HTTP port + 1, and unless
+`httpsCertPath`/`httpsKeyPath` point at your own certificate, a self-signed cert is generated
+once into the plugin state dir (requires `openssl`; trust it on your devices, or bring a real
+cert). Set `"https": false` to turn the TLS listener off.
 
 ## Phone access & notifications
 
@@ -105,8 +114,9 @@ Notifications are real **Web Push**: the bell subscribes through the browser's p
 the plugin's server (which generates and stores its VAPID keys in the plugin state dir) pushes
 agent events to it — so Chrome/Edge show system notifications on desktop and Android even when
 the page is closed. Push requires a secure context: HTTPS (Tailscale) or localhost. If the
-browser has the permission blocked, the bell copies your browser's notification-settings address
-to the clipboard so you can unblock the site. Where push is unavailable, the bell falls back to
+browser has the permission blocked, the bell opens a helper sheet with a real path to the fix:
+on Android it has an "Open notification settings" button (an intent that opens the OS settings
+for the browser), on desktop a copy-the-settings-address button, on iOS step-by-step directions. Where push is unavailable, the bell falls back to
 page-side notifications while the app is open.
 
 ## Development

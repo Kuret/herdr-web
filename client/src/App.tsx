@@ -3,7 +3,9 @@ import { Composer } from './components/Composer';
 import { ToastHost } from './components/ToastHost';
 import { TopBar } from './components/TopBar';
 import { XTermView } from './components/XTermView';
-import { browserNotificationSettingsUrl } from './lib/notifications';
+import { NotificationHelp } from './components/NotificationHelp';
+import { insecureContextHelp, notificationSettingsHelp } from './lib/notifications';
+import type { NotificationSettingsHelp } from './lib/notifications';
 import { useHerdrSocket } from './hooks/useHerdrSocket';
 import { useNotifications } from './hooks/useNotifications';
 import type { Notice } from './components/ToastHost';
@@ -26,6 +28,7 @@ export function App() {
     const { enabled: notificationsEnabled, toggle: toggleNotifications, notifyForEvent } = useNotifications();
     const [notice, setNotice] = useState<Notice | null>(null);
     const [keyboardEnabled, setKeyboardEnabled] = useState(!HAS_COARSE_POINTER);
+    const [help, setHelp] = useState<NotificationSettingsHelp | null>(null);
 
     useEffect(() => {
         if (!lastEvent) {
@@ -53,21 +56,26 @@ export function App() {
 
     const onToggleNotifications = async () => {
         const result = await toggleNotifications();
-        let text = TOGGLE_NOTICES[result];
         if (result === 'denied') {
-            const settingsUrl = browserNotificationSettingsUrl(navigator.userAgent);
+            setHelp(notificationSettingsHelp(navigator.userAgent));
+            return;
+        }
+        if (result === 'unsupported') {
+            let httpsUrl: string | null = null;
             try {
-                await navigator.clipboard.writeText(settingsUrl);
-                text = `Notifications blocked — settings address copied, paste it in a new tab and allow this site: ${settingsUrl}`;
-            } catch {
-                text = `Notifications blocked — open ${settingsUrl} in a new tab and allow this site`;
-            }
+                const meta = (await (await fetch('/meta')).json()) as { https: boolean; httpsPort: number };
+                if (meta.https) {
+                    httpsUrl = `https://${window.location.hostname}:${meta.httpsPort}/`;
+                }
+            } catch {}
+            setHelp(insecureContextHelp(httpsUrl));
+            return;
         }
         nextNoticeId += 1;
         setNotice({
             id: nextNoticeId,
-            text,
-            tone: result === 'unsupported' || result === 'denied' ? 'warn' : 'info',
+            text: TOGGLE_NOTICES[result],
+            tone: 'info',
         });
     };
 
@@ -87,6 +95,7 @@ export function App() {
                 onSendBytes={(bytes) => send({ type: 'input', data: bytes })}
             />
             <ToastHost event={lastEvent} error={lastError} notice={notice} />
+            <NotificationHelp help={help} onClose={() => setHelp(null)} />
         </>
     );
 }

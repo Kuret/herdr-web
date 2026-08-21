@@ -30,10 +30,29 @@ export function browserNotificationSettingsUrl(userAgent: string): string {
 }
 
 export interface NotificationSettingsHelp {
-    readonly platform: 'android' | 'ios' | 'desktop';
+    readonly platform: 'android' | 'ios' | 'desktop' | 'insecure';
+    readonly title: string;
     readonly intentUrl?: string;
     readonly settingsUrl?: string;
+    readonly httpsUrl?: string;
     readonly steps: readonly string[];
+}
+
+// browsers remove the Notification API on plain-http origins (except localhost),
+// so the site can never appear in the allow lists — the only fix is the HTTPS URL
+export function insecureContextHelp(httpsUrl: string | null): NotificationSettingsHelp {
+    return {
+        platform: 'insecure',
+        title: 'Notifications need HTTPS',
+        httpsUrl: httpsUrl ?? undefined,
+        steps: [
+            'This page is on plain HTTP, so the browser hides notifications for it entirely — it will never show up in the allow list',
+            httpsUrl
+                ? 'Open the HTTPS version below (with the self-signed certificate: tap Advanced → Proceed, or trust the cert on your device)'
+                : 'Open the HTTPS URL of this server (or a Tailscale/HTTPS proxy) and enable notifications there',
+            'Then toggle the bell again from the HTTPS page',
+        ],
+    };
 }
 
 // Android Chrome/Edge honor intent: URLs on a user tap, which CAN open the OS
@@ -42,6 +61,7 @@ export function notificationSettingsHelp(userAgent: string): NotificationSetting
     if (/iPhone|iPad|iPod/.test(userAgent)) {
         return {
             platform: 'ios',
+            title: 'Notifications are blocked',
             steps: [
                 'Open the iOS Settings app',
                 'Notifications → find this app (or Safari) and allow notifications',
@@ -53,6 +73,7 @@ export function notificationSettingsHelp(userAgent: string): NotificationSetting
         const browserPackage = userAgent.includes('Edg') ? 'com.microsoft.emmx' : 'com.android.chrome';
         return {
             platform: 'android',
+            title: 'Notifications are blocked',
             intentUrl: `intent:#Intent;action=android.settings.APP_NOTIFICATION_SETTINGS;S.android.provider.extra.APP_PACKAGE=${browserPackage};end`,
             steps: [
                 'Tap "Open notification settings" below and allow notifications for the browser',
@@ -62,10 +83,11 @@ export function notificationSettingsHelp(userAgent: string): NotificationSetting
     }
     return {
         platform: 'desktop',
+        title: 'Notifications are blocked',
         settingsUrl: browserNotificationSettingsUrl(userAgent),
         steps: [
-            'Copy the settings address below and open it in a new tab',
-            'Find this site under "Not allowed" and switch it to Allow',
+            'Easiest: click the lock/tune icon next to the address → Site settings → Notifications → Allow',
+            'Or copy the settings address below, open it in a new tab, and add/allow this site (a site only appears in the list after it has asked once)',
         ],
     };
 }
