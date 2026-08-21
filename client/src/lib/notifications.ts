@@ -55,6 +55,25 @@ export function insecureContextHelp(httpsUrl: string | null): NotificationSettin
     };
 }
 
+// permission is granted but the browser refused to register the service worker —
+// on a non-localhost secure origin that means the TLS certificate isn't trusted,
+// so background push is off and only page-open notifications work
+export function untrustedCertHelp(userAgent: string): NotificationSettingsHelp {
+    const isAndroid = /Android/.test(userAgent);
+    return {
+        platform: 'insecure',
+        title: 'Push needs a trusted certificate',
+        steps: [
+            'Notifications work while this page is open, but background push is blocked: the HTTPS certificate is self-signed and this device does not trust it, so the browser refuses to register the service worker',
+            isAndroid
+                ? 'Trust it: download the cert (https-cert.pem from the plugin state dir) to the phone, then Android Settings → Security → More security settings → Install a certificate → CA certificate'
+                : 'Trust the certificate on this device (macOS: open it in Keychain Access and set Always Trust), or serve a real certificate via httpsCertPath/httpsKeyPath',
+            'Easiest alternative: use Tailscale (`tailscale serve <port>`) — it gives a properly trusted HTTPS URL with zero certificate work',
+            'Then reload and toggle the bell again',
+        ],
+    };
+}
+
 // Android Chrome/Edge honor intent: URLs on a user tap, which CAN open the OS
 // notification settings for the browser app — the one real escape hatch a page has
 export function notificationSettingsHelp(userAgent: string): NotificationSettingsHelp {

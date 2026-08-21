@@ -10,10 +10,17 @@ export function urlBase64ToUint8Array(base64Url: string): Uint8Array {
     return output;
 }
 
-export async function subscribeToPush(): Promise<PushSubscription | null> {
+export type PushSubscribeFailure = 'no-service-worker' | 'no-push-manager';
+
+export async function subscribeToPush(): Promise<PushSubscription | PushSubscribeFailure> {
     const registration = await navigator.serviceWorker?.getRegistration();
-    if (!registration || !('pushManager' in registration)) {
-        return null;
+    if (!registration) {
+        // on a secure origin this almost always means the TLS cert isn't trusted,
+        // which makes the browser refuse to register the service worker
+        return 'no-service-worker';
+    }
+    if (!('pushManager' in registration)) {
+        return 'no-push-manager';
     }
     const keyResponse = await fetch('/push/public-key');
     const { publicKey } = (await keyResponse.json()) as { publicKey: string };

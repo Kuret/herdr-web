@@ -4,7 +4,7 @@ import { ToastHost } from './components/ToastHost';
 import { TopBar } from './components/TopBar';
 import { XTermView } from './components/XTermView';
 import { NotificationHelp } from './components/NotificationHelp';
-import { insecureContextHelp, notificationSettingsHelp } from './lib/notifications';
+import { insecureContextHelp, notificationSettingsHelp, untrustedCertHelp } from './lib/notifications';
 import type { NotificationSettingsHelp } from './lib/notifications';
 import { useHerdrSocket } from './hooks/useHerdrSocket';
 import { useNotifications } from './hooks/useNotifications';
@@ -14,6 +14,7 @@ import type { NotificationToggleResult } from './hooks/useNotifications';
 const TOGGLE_NOTICES: Readonly<Record<NotificationToggleResult, Notice['text']>> = {
     'enabled-push': 'Push notifications on — delivered by the browser even when this page is closed',
     'enabled-local': 'Notifications on while this page is open (push unavailable in this browser)',
+    'enabled-local-untrusted': 'Notifications on while this page is open — background push needs a trusted certificate',
     disabled: 'Notifications off',
     unsupported: 'Notifications need HTTPS (or localhost) — open via Tailscale/HTTPS to enable',
     denied: 'Notification permission denied — allow it in browser site settings',
@@ -71,6 +72,10 @@ export function App() {
         const result = await toggleNotifications();
         if (result === 'denied') {
             setHelp(notificationSettingsHelp(navigator.userAgent));
+            return;
+        }
+        if (result === 'enabled-local-untrusted') {
+            setHelp(untrustedCertHelp(navigator.userAgent));
             return;
         }
         if (result === 'unsupported') {

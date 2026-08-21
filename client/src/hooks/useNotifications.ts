@@ -7,7 +7,13 @@ const STORAGE_KEY = 'herdr-web:notifications-enabled';
 const MODE_STORAGE_KEY = 'herdr-web:notifications-mode';
 
 export type NotificationMode = 'push' | 'local';
-export type NotificationToggleResult = 'enabled-push' | 'enabled-local' | 'disabled' | 'unsupported' | 'denied';
+export type NotificationToggleResult =
+    | 'enabled-push'
+    | 'enabled-local'
+    | 'enabled-local-untrusted'
+    | 'disabled'
+    | 'unsupported'
+    | 'denied';
 
 export interface NotificationControls {
     readonly enabled: boolean;
@@ -37,8 +43,8 @@ export function useNotifications(): NotificationControls {
             return;
         }
         subscribeToPush()
-            .then((subscription) => {
-                if (!subscription) {
+            .then((outcome) => {
+                if (typeof outcome === 'string') {
                     setMode('local');
                 }
             })
@@ -67,13 +73,15 @@ export function useNotifications(): NotificationControls {
         }
         // real Web Push first (browser delivers system notifications even with the
         // page closed); page-side notifications remain as the fallback
+        let failure: string | null = null;
         try {
-            const subscription = await subscribeToPush();
-            if (subscription) {
+            const outcome = await subscribeToPush();
+            if (typeof outcome !== 'string') {
                 setMode('push');
                 setEnabled(true);
                 return 'enabled-push';
             }
+            failure = outcome;
         } catch (err) {
             if (err instanceof Error) {
                 console.error('push subscription failed:', err.message);
@@ -81,6 +89,11 @@ export function useNotifications(): NotificationControls {
         }
         setMode('local');
         setEnabled(true);
+        // a service worker refusing to register on an https page = the cert
+        // isn't trusted by this device (plain-http localhost registers fine)
+        if (failure === 'no-service-worker' && window.location.protocol === 'https:') {
+            return 'enabled-local-untrusted';
+        }
         return 'enabled-local';
     }, [enabled]);
 
