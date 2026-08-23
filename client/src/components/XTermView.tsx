@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import type { ClientMessage } from '../types';
 import type { TerminalMessage } from '../hooks/useHerdrSocket';
+import { applyModifier, type ArmedModifier } from '../lib/modifier-keys';
 
 const MOBILE_MAX_WIDTH_PX = 768;
 const MOBILE_FONT_SIZE = 12;
@@ -27,15 +28,33 @@ const TERMINAL_THEME = {
 interface XTermViewProps {
     readonly connected: boolean;
     readonly keyboardEnabled: boolean;
+    readonly armedModifier: ArmedModifier | null;
+    readonly onModifierApplied: () => void;
     readonly send: (message: ClientMessage) => void;
     readonly subscribeTerminal: (handler: (message: TerminalMessage) => void) => () => void;
 }
 
-export function XTermView({ connected, keyboardEnabled, send, subscribeTerminal }: XTermViewProps) {
+export function XTermView({
+    connected,
+    keyboardEnabled,
+    armedModifier,
+    onModifierApplied,
+    send,
+    subscribeTerminal,
+}: XTermViewProps) {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const xtermRef = useRef<XTerm | null>(null);
     const fitAddonRef = useRef<FitAddon | null>(null);
     const startedRef = useRef(false);
+    const armedModifierRef = useRef(armedModifier);
+    const onModifierAppliedRef = useRef(onModifierApplied);
+
+    useEffect(() => {
+        armedModifierRef.current = armedModifier;
+    }, [armedModifier]);
+    useEffect(() => {
+        onModifierAppliedRef.current = onModifierApplied;
+    }, [onModifierApplied]);
 
     useEffect(() => {
         const container = containerRef.current;
@@ -58,7 +77,15 @@ export function XTermView({ connected, keyboardEnabled, send, subscribeTerminal 
         xtermRef.current = xterm;
         fitAddonRef.current = fitAddon;
 
-        const inputDisposable = xterm.onData((data) => send({ type: 'input', data }));
+        const inputDisposable = xterm.onData((data) => {
+            const modifier = armedModifierRef.current;
+            if (modifier && data.length === 1) {
+                onModifierAppliedRef.current();
+                send({ type: 'input', data: applyModifier(modifier, data) });
+                return;
+            }
+            send({ type: 'input', data });
+        });
 
         const unsubscribe = subscribeTerminal((message) => {
             if (message.type === 'output') {
@@ -123,6 +150,48 @@ export function XTermView({ connected, keyboardEnabled, send, subscribeTerminal 
         xterm.focus();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [connected]);
+
+    // touch devices fire no native "wheel" event, so drag gestures never reach
+    // xterm's own wheel handler — the one that scrolls scrollback, or (in the TUI's
+    // alt-screen buffer with mouse tracking on) sends SGR mouse-scroll codes / arrow
+    // keys. Re-synthesize that wheel event from touch deltas instead of duplicating
+    // xterm's scroll-vs-mouse-tracking-vs-arrow-key logic ourselves.
+    useEffect(() => {
+        const container = containerRef.current;
+        if (!container) {
+            return;
+        }
+        let lastY: number | null = null;
+
+        const onTouchStart = (event: TouchEvent) => {
+            lastY = event.touches.length === 1 ? event.touches[0].clientY : null;
+        };
+        const onTouchMove = (event: TouchEvent) => {
+            const target = xtermRef.current?.element;
+            if (lastY === null || event.touches.length !== 1 || !target) {
+                return;
+            }
+            const currentY = event.touches[0].clientY;
+            const deltaY = lastY - currentY;
+            lastY = currentY;
+            event.preventDefault();
+            target.dispatchEvent(new WheelEvent('wheel', { deltaY, deltaMode: 0, bubbles: true, cancelable: true }));
+        };
+        const onTouchEnd = () => {
+            lastY = null;
+        };
+
+        container.addEventListener('touchstart', onTouchStart, { passive: true });
+        container.addEventListener('touchmove', onTouchMove, { passive: false });
+        container.addEventListener('touchend', onTouchEnd, { passive: true });
+        container.addEventListener('touchcancel', onTouchEnd, { passive: true });
+        return () => {
+            container.removeEventListener('touchstart', onTouchStart);
+            container.removeEventListener('touchmove', onTouchMove);
+            container.removeEventListener('touchend', onTouchEnd);
+            container.removeEventListener('touchcancel', onTouchEnd);
+        };
+    }, []);
 
     return <main ref={containerRef} className="xterm-wrap" />;
 }

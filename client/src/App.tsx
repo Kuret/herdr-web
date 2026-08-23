@@ -10,6 +10,7 @@ import { useHerdrSocket } from './hooks/useHerdrSocket';
 import { useNotifications } from './hooks/useNotifications';
 import type { Notice } from './components/ToastHost';
 import type { NotificationToggleResult } from './hooks/useNotifications';
+import type { ArmedModifier } from './lib/modifier-keys';
 
 const TOGGLE_NOTICES: Readonly<Record<NotificationToggleResult, Notice['text']>> = {
     'enabled-push': 'Push notifications on — delivered by the browser even when this page is closed',
@@ -38,6 +39,7 @@ export function App() {
     const { enabled: notificationsEnabled, toggle: toggleNotifications, notifyForEvent } = useNotifications();
     const [notice, setNotice] = useState<Notice | null>(null);
     const [keyboardEnabled, setKeyboardEnabled] = useState(initialKeyboardEnabled);
+    const [armedModifier, setArmedModifier] = useState<ArmedModifier | null>(null);
 
     useEffect(() => {
         localStorage.setItem(KEYBOARD_STORAGE_KEY, String(keyboardEnabled));
@@ -60,7 +62,10 @@ export function App() {
             return;
         }
         const apply = () => {
-            const keyboardShowing = viewport.height < window.innerHeight - 1;
+            // pinch-zoom shrinks visualViewport too (scale != 1) — only the keyboard
+            // shrinks it at scale 1, so gate on scale to leave zoom alone
+            const zoomed = Math.abs(viewport.scale - 1) > 0.01;
+            const keyboardShowing = !zoomed && viewport.height < window.innerHeight - 1;
             document.documentElement.style.setProperty('--app-height', keyboardShowing ? `${viewport.height}px` : '100%');
         };
         viewport.addEventListener('resize', apply);
@@ -105,11 +110,20 @@ export function App() {
                 notificationsEnabled={notificationsEnabled}
                 onToggleNotifications={() => void onToggleNotifications()}
             />
-            <XTermView connected={connected} keyboardEnabled={keyboardEnabled} send={send} subscribeTerminal={subscribeTerminal} />
+            <XTermView
+                connected={connected}
+                keyboardEnabled={keyboardEnabled}
+                armedModifier={armedModifier}
+                onModifierApplied={() => setArmedModifier(null)}
+                send={send}
+                subscribeTerminal={subscribeTerminal}
+            />
             <Composer
                 disabled={!connected}
                 keyboardEnabled={keyboardEnabled}
+                armedModifier={armedModifier}
                 onToggleKeyboard={() => setKeyboardEnabled((current) => !current)}
+                onToggleModifier={(modifier) => setArmedModifier((current) => (current === modifier ? null : modifier))}
                 onSendBytes={(bytes) => send({ type: 'input', data: bytes })}
             />
             <ToastHost event={lastEvent} error={lastError} notice={notice} />

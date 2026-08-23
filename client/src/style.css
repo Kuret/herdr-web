@@ -157,6 +157,7 @@ body {
     padding: 6px 4px 0 8px;
     background: var(--bg);
     overflow: hidden;
+    touch-action: pan-y pinch-zoom;
 }
 
 .xterm-wrap .xterm {
