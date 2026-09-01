@@ -371,8 +371,8 @@ class HerdrWebServer {
         const events = this.watcher.update(panes);
         for (const event of events) {
             this.broadcast({ type: 'agent_event', event });
-            if (event.notifyWorthy) {
-                void this.push.notifyAll(HerdrWebServer.pushPayloadFor(event));
+            if (event.from !== null) {
+                void this.push.notifyAll(HerdrWebServer.pushPayloadFor(event), { routine: !event.notifyWorthy });
             }
         }
     }
@@ -383,7 +383,10 @@ class HerdrWebServer {
         if (event.to === 'blocked') {
             return { title: `${agent} needs attention`, body: where, tag: event.paneId };
         }
-        return { title: `${agent} finished (${event.to})`, body: where, tag: event.paneId };
+        if (event.from === 'working') {
+            return { title: `${agent} finished (${event.to})`, body: where, tag: event.paneId };
+        }
+        return { title: `${agent}: ${event.from} → ${event.to}`, body: where, tag: event.paneId };
     }
 
     broadcast(payload) {

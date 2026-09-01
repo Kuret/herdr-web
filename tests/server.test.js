@@ -35,8 +35,8 @@ function makePushStub() {
       this.removed.push(endpoint);
       return true;
     },
-    async notifyAll(payload) {
-      this.notified.push(payload);
+    async notifyAll(payload, options = {}) {
+      this.notified.push({ ...payload, routine: options.routine === true });
     },
     async notifyOne(subscription, payload) {
       this.notified.push({ ...payload, to: subscription.endpoint });
@@ -295,6 +295,11 @@ describe('HerdrWebServer', () => {
     test('finished events include the new state and fall back to pane id', () => {
       const payload = HerdrWebServer.pushPayloadFor({ paneId: 'w1:p1', to: 'idle', from: 'working' });
       assert.deepEqual(payload, { title: 'agent finished (idle)', body: 'w1:p1', tag: 'w1:p1' });
+    });
+
+    test('routine transitions name both ends so the device can tell them apart', () => {
+      const payload = HerdrWebServer.pushPayloadFor({ agent: 'claude', paneId: 'w1:p1', to: 'working', from: 'idle' });
+      assert.deepEqual(payload, { title: 'claude: idle \u2192 working', body: 'w1:p1', tag: 'w1:p1' });
     });
   });
 

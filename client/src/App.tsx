@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Composer } from './components/Composer';
+import { SettingsSheet } from './components/SettingsSheet';
 import { ToastHost } from './components/ToastHost';
 import { TopBar } from './components/TopBar';
 import { XTermView } from './components/XTermView';
 import { NotificationHelp } from './components/NotificationHelp';
 import { insecureContextHelp, notificationSettingsHelp, untrustedCertHelp } from './lib/notifications';
+import { ALL_CHANGES_STORAGE_KEY, TOASTS_STORAGE_KEY, loadStoredSettings, shouldAnnounce } from './lib/notification-settings';
+import type { NotificationSettings } from './lib/notification-settings';
 import { quoteShellPath, uploadImage, validateImageFile } from './lib/terminal-image';
 import type { NotificationSettingsHelp } from './lib/notifications';
 import { useHerdrSocket } from './hooks/useHerdrSocket';
@@ -37,23 +40,34 @@ function initialKeyboardEnabled(): boolean {
 
 export function App() {
     const { connected, panes, lastEvent, lastError, send, subscribeTerminal } = useHerdrSocket();
-    const { enabled: notificationsEnabled, toggle: toggleNotifications, notifyForEvent } = useNotifications();
+    const [stored, setStored] = useState(loadStoredSettings);
+    const { enabled: notificationsEnabled, toggle: toggleNotifications, notifyForEvent } = useNotifications(stored.allChanges);
     const [notice, setNotice] = useState<Notice | null>(null);
     const [keyboardEnabled, setKeyboardEnabled] = useState(initialKeyboardEnabled);
     const [armedModifier, setArmedModifier] = useState<ArmedModifier | null>(null);
     const [uploadingImage, setUploadingImage] = useState(false);
+    const [settingsOpen, setSettingsOpen] = useState(false);
 
     useEffect(() => {
         localStorage.setItem(KEYBOARD_STORAGE_KEY, String(keyboardEnabled));
     }, [keyboardEnabled]);
-    const [help, setHelp] = useState<NotificationSettingsHelp | null>(null);
 
     useEffect(() => {
-        if (!lastEvent) {
+        localStorage.setItem(TOASTS_STORAGE_KEY, String(stored.toasts));
+        localStorage.setItem(ALL_CHANGES_STORAGE_KEY, String(stored.allChanges));
+    }, [stored]);
+    const [help, setHelp] = useState<NotificationSettingsHelp | null>(null);
+
+    const settings: NotificationSettings = { ...stored, device: notificationsEnabled };
+    // one filter for both channels, so the sheet's wording matches what actually arrives
+    const announced = lastEvent && shouldAnnounce(lastEvent, stored) ? lastEvent : null;
+
+    useEffect(() => {
+        if (!announced || !notificationsEnabled) {
             return;
         }
-        void notifyForEvent(lastEvent);
-    }, [lastEvent, notifyForEvent]);
+        void notifyForEvent(announced);
+    }, [announced, notificationsEnabled, notifyForEvent]);
 
     // iOS ignores interactive-widget=resizes-content, so track the visual
     // viewport by hand: the app shrinks and the quick-keys bar rides above the
@@ -151,8 +165,8 @@ export function App() {
             <TopBar
                 connected={connected}
                 panes={panes}
-                notificationsEnabled={notificationsEnabled}
-                onToggleNotifications={() => void onToggleNotifications()}
+                notificationsEnabled={notificationsEnabled || stored.toasts}
+                onOpenSettings={() => setSettingsOpen(true)}
             />
             <XTermView
                 connected={connected}
@@ -173,7 +187,19 @@ export function App() {
                 onImageFiles={(files) => void onImageFiles(files)}
                 uploadingImage={uploadingImage}
             />
-            <ToastHost event={lastEvent} error={lastError} notice={notice} />
+            <ToastHost event={settings.toasts ? announced : null} error={lastError} notice={notice} />
+            <SettingsSheet
+                open={settingsOpen}
+                settings={settings}
+                onChange={(key, value) => {
+                    if (key === 'device') {
+                        void onToggleNotifications();
+                        return;
+                    }
+                    setStored((current) => ({ ...current, [key]: value }));
+                }}
+                onClose={() => setSettingsOpen(false)}
+            />
             <NotificationHelp help={help} onClose={() => setHelp(null)} />
         </>
     );

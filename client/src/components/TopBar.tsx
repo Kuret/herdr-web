@@ -5,10 +5,10 @@ interface TopBarProps {
     readonly connected: boolean;
     readonly panes: HerdrPane[];
     readonly notificationsEnabled: boolean;
-    readonly onToggleNotifications: () => void;
+    readonly onOpenSettings: () => void;
 }
 
-export function TopBar({ connected, panes, notificationsEnabled, onToggleNotifications }: TopBarProps) {
+export function TopBar({ connected, panes, notificationsEnabled, onOpenSettings }: TopBarProps) {
     return (
         <header className="topbar">
             <div className="topbar-title">
@@ -24,9 +24,11 @@ export function TopBar({ connected, panes, notificationsEnabled, onToggleNotific
             <button
                 type="button"
                 className="icon-btn"
+                aria-haspopup="dialog"
                 aria-pressed={notificationsEnabled}
-                aria-label={notificationsEnabled ? 'Turn off notifications' : 'Turn on notifications'}
-                onClick={onToggleNotifications}
+                aria-label="Notification settings"
+                title="Notification settings"
+                onClick={onOpenSettings}
             >
                 <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />

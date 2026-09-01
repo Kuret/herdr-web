@@ -24,7 +24,7 @@ async function waitForServiceWorker(): Promise<ServiceWorkerRegistration | null>
     return Promise.race([navigator.serviceWorker.ready, timeout]);
 }
 
-export async function subscribeToPush(): Promise<PushSubscription | PushSubscribeFailure> {
+export async function subscribeToPush(allChanges = false): Promise<PushSubscription | PushSubscribeFailure> {
     const registration = await waitForServiceWorker();
     if (!registration) {
         // ready never resolving on a secure origin almost always means the TLS
@@ -43,7 +43,9 @@ export async function subscribeToPush(): Promise<PushSubscription | PushSubscrib
     await fetch('/push/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(subscription.toJSON()),
+        // the verbosity preference rides along: background push is filtered on the
+        // server, which has no other way to know what this device asked for
+        body: JSON.stringify({ ...subscription.toJSON(), allChanges }),
     });
     return subscription;
 }

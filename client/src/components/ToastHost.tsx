@@ -24,6 +24,7 @@ interface Toast {
 }
 
 interface ToastHostProps {
+    // already filtered by the notification settings; null means "say nothing"
     readonly event: AgentEvent | null;
     readonly error: string | null;
     readonly notice: Notice | null;
@@ -33,7 +34,7 @@ export function ToastHost({ event, error, notice }: ToastHostProps) {
     const [toasts, setToasts] = useState<Toast[]>([]);
 
     useEffect(() => {
-        if (!event || event.from === null) {
+        if (!event) {
             return;
         }
         const { title, body } = formatAgentNotification(event);

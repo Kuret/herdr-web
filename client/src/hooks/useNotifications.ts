@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { formatAgentNotification } from '../lib/notifications';
 import { subscribeToPush, unsubscribeFromPush } from '../lib/push';
 import type { AgentEvent } from '../types';
@@ -21,7 +21,7 @@ export interface NotificationControls {
     readonly notifyForEvent: (event: AgentEvent) => Promise<void>;
 }
 
-export function useNotifications(): NotificationControls {
+export function useNotifications(allChanges: boolean): NotificationControls {
     const [enabled, setEnabled] = useState(() => localStorage.getItem(STORAGE_KEY) === 'true');
     const [mode, setMode] = useState<NotificationMode>(() =>
         localStorage.getItem(MODE_STORAGE_KEY) === 'local' ? 'local' : 'push',
@@ -44,7 +44,7 @@ export function useNotifications(): NotificationControls {
         if (!('Notification' in window) || Notification.permission !== 'granted') {
             return;
         }
-        subscribeToPush()
+        subscribeToPush(allChanges)
             .then((outcome) => {
                 setMode(typeof outcome === 'string' ? 'local' : 'push');
             })
@@ -75,7 +75,7 @@ export function useNotifications(): NotificationControls {
         // page closed); page-side notifications remain as the fallback
         let failure: string | null = null;
         try {
-            const outcome = await subscribeToPush();
+            const outcome = await subscribeToPush(allChanges);
             if (typeof outcome !== 'string') {
                 setMode('push');
                 setEnabled(true);
@@ -95,11 +95,28 @@ export function useNotifications(): NotificationControls {
             return 'enabled-local-untrusted';
         }
         return 'enabled-local';
-    }, [enabled]);
+    }, [enabled, allChanges]);
+
+    // the server filters background push per subscription, so a verbosity change
+    // has to be re-registered against the live subscription to take effect.
+    // Mount is already covered by the self-heal effect above.
+    const lastPushedVerbosity = useRef(allChanges);
+    useEffect(() => {
+        if (lastPushedVerbosity.current === allChanges) {
+            return;
+        }
+        lastPushedVerbosity.current = allChanges;
+        if (!enabled || mode !== 'push') {
+            return;
+        }
+        void subscribeToPush(allChanges).catch(() => {});
+    }, [allChanges, enabled, mode]);
 
     const notifyForEvent = useCallback(
         async (event: AgentEvent) => {
-            if (!enabled || mode === 'push' || !event.notifyWorthy) {
+            // events arrive pre-filtered by the notification settings; push mode is
+            // served by the service worker instead, so the page must not double up
+            if (!enabled || mode === 'push') {
                 return;
             }
             if (!('Notification' in window) || Notification.permission !== 'granted') {
