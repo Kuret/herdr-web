@@ -11,6 +11,7 @@ const { loadTlsOptions, activeCertificatePath } = require('./lib/tls');
 const { loadConfig } = require('./lib/config');
 const herdr = require('./lib/herdr');
 const { PtySession } = require('./lib/pty-session');
+const { ImageStore } = require('./lib/image-store');
 const { PushService } = require('./lib/push-service');
 const { StateWatcher } = require('./lib/state-watcher');
 
@@ -31,10 +32,13 @@ class HerdrWebServer {
 
     static MAX_PUSH_BODY_BYTES = 16 * 1024;
 
+    static IMAGE_ROUTE = '/images';
+
     constructor(config, pushService = new PushService()) {
         this.config = config;
         this.watcher = new StateWatcher();
         this.push = pushService;
+        this.images = new ImageStore();
         this.clients = new Set();
         this.ptyBySocket = new Map();
         this.lastTopology = null;
@@ -114,6 +118,10 @@ class HerdrWebServer {
             this.handlePushRoute(req, res, requestPath);
             return;
         }
+        if (requestPath === HerdrWebServer.IMAGE_ROUTE && req.method === 'POST') {
+            void this.handleImageUpload(req, res);
+            return;
+        }
         if (requestPath === '/meta') {
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ https: this.config.https, httpsPort: this.config.httpsPort }));
@@ -168,6 +176,67 @@ class HerdrWebServer {
             return;
         }
         respond(404, { ok: false });
+    }
+
+    // Images are uploaded as a raw body with the type in the Content-Type header: one
+    // field needs no multipart parser. The destination is never sent by the browser —
+    // it is the focused pane's own working directory, read back from herdr.
+    async handleImageUpload(req, res) {
+        const respond = (status, payload) => {
+            res.writeHead(status, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(payload));
+        };
+
+        let buffer;
+        try {
+            buffer = await this.readBinaryBody(req, ImageStore.MAX_BYTES);
+        } catch (error) {
+            const tooLarge = error.message === 'body too large';
+            respond(tooLarge ? 413 : 400, {
+                ok: false,
+                message: tooLarge ? 'That image is too large.' : 'Could not read the upload.',
+            });
+            return;
+        }
+
+        const cwd = await this.focusedPaneCwd();
+        const result = await this.images.save({ buffer, mimeType: req.headers['content-type'], cwd });
+        if (!result.ok) {
+            respond(result.status, { ok: false, message: result.message });
+            return;
+        }
+        respond(200, { ok: true, path: result.path });
+    }
+
+    // foreground_cwd tracks where the pane's running program actually is, which is what
+    // the user means by 'this project'; cwd is the shell's own and the fallback.
+    async focusedPaneCwd() {
+        try {
+            const panes = await herdr.listPanes();
+            const focused = panes.find((pane) => pane.focused) || panes[0];
+            return focused?.foreground_cwd || focused?.cwd || null;
+        } catch (error) {
+            console.error(`herdr-web: could not resolve the focused pane's folder: ${error.message}`);
+            return null;
+        }
+    }
+
+    readBinaryBody(req, maxBytes) {
+        return new Promise((resolve, reject) => {
+            let size = 0;
+            const chunks = [];
+            req.on('data', (chunk) => {
+                size += chunk.length;
+                if (size > maxBytes) {
+                    reject(new Error('body too large'));
+                    req.destroy();
+                    return;
+                }
+                chunks.push(chunk);
+            });
+            req.on('end', () => resolve(Buffer.concat(chunks)));
+            req.on('error', reject);
+        });
     }
 
     readJsonBody(req) {

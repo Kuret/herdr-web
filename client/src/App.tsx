@@ -5,6 +5,7 @@ import { TopBar } from './components/TopBar';
 import { XTermView } from './components/XTermView';
 import { NotificationHelp } from './components/NotificationHelp';
 import { insecureContextHelp, notificationSettingsHelp, untrustedCertHelp } from './lib/notifications';
+import { quoteShellPath, uploadImage, validateImageFile } from './lib/terminal-image';
 import type { NotificationSettingsHelp } from './lib/notifications';
 import { useHerdrSocket } from './hooks/useHerdrSocket';
 import { useNotifications } from './hooks/useNotifications';
@@ -40,6 +41,7 @@ export function App() {
     const [notice, setNotice] = useState<Notice | null>(null);
     const [keyboardEnabled, setKeyboardEnabled] = useState(initialKeyboardEnabled);
     const [armedModifier, setArmedModifier] = useState<ArmedModifier | null>(null);
+    const [uploadingImage, setUploadingImage] = useState(false);
 
     useEffect(() => {
         localStorage.setItem(KEYBOARD_STORAGE_KEY, String(keyboardEnabled));
@@ -73,6 +75,53 @@ export function App() {
         return () => viewport.removeEventListener('resize', apply);
     }, []);
 
+    const showNotice = (text: string, tone: 'info' | 'warn' = 'info') => {
+        nextNoticeId += 1;
+        setNotice({ id: nextNoticeId, text, tone });
+    };
+
+    // An agent reads an image from disk, so the file is uploaded into the focused pane's
+    // own folder and its path is typed into the pane for the user to prompt around.
+    const onImageFiles = async (files: File[]) => {
+        if (uploadingImage) {
+            showNotice('Still uploading the previous image', 'info');
+            return;
+        }
+
+        const accepted: File[] = [];
+        for (const file of files) {
+            const rejection = validateImageFile(file);
+            if (rejection) {
+                showNotice(rejection, 'warn');
+                continue;
+            }
+            accepted.push(file);
+        }
+        if (accepted.length === 0) {
+            return;
+        }
+
+        setUploadingImage(true);
+        let uploaded = 0;
+        try {
+            for (const file of accepted) {
+                try {
+                    const savedPath = await uploadImage(file);
+                    send({ type: 'input', data: `${quoteShellPath(savedPath)} ` });
+                    uploaded += 1;
+                } catch (error) {
+                    showNotice(error instanceof Error ? error.message : 'Upload failed', 'warn');
+                }
+            }
+        } finally {
+            setUploadingImage(false);
+        }
+
+        if (uploaded > 0) {
+            showNotice(uploaded === 1 ? 'Image path added to the pane' : `${uploaded} image paths added to the pane`);
+        }
+    };
+
     const onToggleNotifications = async () => {
         const result = await toggleNotifications();
         if (result === 'denied') {
@@ -94,12 +143,7 @@ export function App() {
             setHelp(insecureContextHelp(httpsUrl));
             return;
         }
-        nextNoticeId += 1;
-        setNotice({
-            id: nextNoticeId,
-            text: TOGGLE_NOTICES[result],
-            tone: 'info',
-        });
+        showNotice(TOGGLE_NOTICES[result]);
     };
 
     return (
@@ -117,6 +161,7 @@ export function App() {
                 onModifierApplied={() => setArmedModifier(null)}
                 send={send}
                 subscribeTerminal={subscribeTerminal}
+                onImageFiles={(files) => void onImageFiles(files)}
             />
             <Composer
                 disabled={!connected}
@@ -125,6 +170,8 @@ export function App() {
                 onToggleKeyboard={() => setKeyboardEnabled((current) => !current)}
                 onToggleModifier={(modifier) => setArmedModifier((current) => (current === modifier ? null : modifier))}
                 onSendBytes={(bytes) => send({ type: 'input', data: bytes })}
+                onImageFiles={(files) => void onImageFiles(files)}
+                uploadingImage={uploadingImage}
             />
             <ToastHost event={lastEvent} error={lastError} notice={notice} />
             <NotificationHelp help={help} onClose={() => setHelp(null)} />

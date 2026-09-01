@@ -5,11 +5,32 @@ import '@xterm/xterm/css/xterm.css';
 import type { ClientMessage } from '../types';
 import type { TerminalMessage } from '../hooks/useHerdrSocket';
 import { applyModifier, type ArmedModifier } from '../lib/modifier-keys';
+import { ApcSplitter } from '../lib/kitty/apc-splitter';
+import { parseKittyControl } from '../lib/kitty/control';
+import { KittyImageStore } from '../lib/kitty/image-store';
+import { KittyOverlayRenderer } from '../lib/kitty/overlay-renderer';
+import { toVisibleFrames } from '../lib/kitty/visible-frames';
+import type { KittyBitmap } from '../lib/kitty/types';
+import { TouchGestureRecognizer, type TouchPoint } from '../lib/touch/gesture-recognizer';
+import { imageFilesFromDataTransfer } from '../lib/terminal-image';
 
 const MOBILE_MAX_WIDTH_PX = 768;
 const MOBILE_FONT_SIZE = 12;
 const DESKTOP_FONT_SIZE = 14;
 const RESIZE_DEBOUNCE_MS = 150;
+const RIGHT_MOUSE_BUTTON = 2;
+const RIGHT_MOUSE_BUTTONS_MASK = 2;
+const LONG_PRESS_HAPTIC_MS = 15;
+
+// herdr transmits terminal-browser frames as raw RGBA (kitty graphics f=32)
+async function decodeRgbaFrame(
+    pixels: Uint8ClampedArray<ArrayBuffer>,
+    width: number,
+    height: number,
+): Promise<KittyBitmap> {
+    const bitmap = await createImageBitmap(new ImageData(pixels, width, height));
+    return { width, height, source: bitmap, close: () => bitmap.close() };
+}
 
 // nerd-font families first so herdr's TUI glyphs render; the self-hosted
 // Symbols Nerd Font Mono (style.css @font-face) is the guaranteed fallback
@@ -32,6 +53,8 @@ interface XTermViewProps {
     readonly onModifierApplied: () => void;
     readonly send: (message: ClientMessage) => void;
     readonly subscribeTerminal: (handler: (message: TerminalMessage) => void) => () => void;
+    /** Images pasted into, or dropped onto, the terminal. Omit to ignore both. */
+    readonly onImageFiles?: (files: File[]) => void;
 }
 
 export function XTermView({
@@ -41,13 +64,17 @@ export function XTermView({
     onModifierApplied,
     send,
     subscribeTerminal,
+    onImageFiles,
 }: XTermViewProps) {
     const containerRef = useRef<HTMLDivElement | null>(null);
+    const onImageFilesRef = useRef(onImageFiles);
+    onImageFilesRef.current = onImageFiles;
     const xtermRef = useRef<XTerm | null>(null);
     const fitAddonRef = useRef<FitAddon | null>(null);
     const startedRef = useRef(false);
     const armedModifierRef = useRef(armedModifier);
     const onModifierAppliedRef = useRef(onModifierApplied);
+    const graphicsResetRef = useRef<(() => void) | null>(null);
 
     useEffect(() => {
         armedModifierRef.current = armedModifier;
@@ -69,6 +96,9 @@ export function XTermView({
             theme: TERMINAL_THEME,
             scrollback: 5000,
             allowProposedApi: true,
+            // herdr asks for the cell size (CSI 16 t) to size kitty graphics frames;
+            // without an answer it falls back to 8x16 and the frames arrive upscaled
+            windowOptions: { getCellSizePixels: true },
         });
         const fitAddon = new FitAddon();
         xterm.loadAddon(fitAddon);
@@ -76,6 +106,60 @@ export function XTermView({
         fitAddon.fit();
         xtermRef.current = xterm;
         fitAddonRef.current = fitAddon;
+
+        // xterm cannot parse APC (its docs list APC/PM/SOS as unsupported), so kitty graphics
+        // sequences are lifted out of the stream here and drawn on an overlay canvas instead
+        const splitter = new ApcSplitter();
+        const screen = xterm.element?.querySelector<HTMLElement>('.xterm-screen') ?? null;
+        const renderer = screen === null ? null : new KittyOverlayRenderer(screen);
+        let redrawHandle: number | null = null;
+
+        const drawGraphics = () => {
+            redrawHandle = null;
+            if (renderer === null || screen === null) {
+                return;
+            }
+            const buffer = xterm.buffer.active;
+            const frames = toVisibleFrames(imageStore.visiblePlacements, buffer.viewportY, xterm.rows);
+            renderer.render(frames, (imageId) => imageStore.bitmapFor(imageId), {
+                width: screen.clientWidth / xterm.cols,
+                height: screen.clientHeight / xterm.rows,
+            });
+        };
+        const scheduleRedraw = () => {
+            if (redrawHandle === null) {
+                redrawHandle = window.requestAnimationFrame(drawGraphics);
+            }
+        };
+        const imageStore = new KittyImageStore(decodeRgbaFrame, scheduleRedraw);
+        graphicsResetRef.current = () => {
+            splitter.reset();
+            imageStore.clear();
+        };
+
+        // a placement anchors at the cursor, so it must be applied at its exact position in the
+        // stream — xterm runs write callbacks in order, which makes an empty write a safe marker
+        const writeWithGraphics = (data: string) => {
+            for (const part of splitter.feed(data)) {
+                if (part.kind === 'text') {
+                    xterm.write(part.text);
+                    continue;
+                }
+                const control = parseKittyControl(part.control);
+                const { payload } = part;
+                xterm.write('', () => {
+                    const buffer = xterm.buffer.active;
+                    imageStore.handleSequence(control, payload, {
+                        col: buffer.cursorX,
+                        absRow: buffer.baseY + buffer.cursorY,
+                    });
+                });
+            }
+        };
+
+        const renderDisposable = xterm.onRender(scheduleRedraw);
+        const scrollDisposable = xterm.onScroll(scheduleRedraw);
+        const resizeDisposable = xterm.onResize(scheduleRedraw);
 
         const inputDisposable = xterm.onData((data) => {
             const modifier = armedModifierRef.current;
@@ -89,7 +173,7 @@ export function XTermView({
 
         const unsubscribe = subscribeTerminal((message) => {
             if (message.type === 'output') {
-                xterm.write(message.data);
+                writeWithGraphics(message.data);
                 return;
             }
             xterm.write(`\r\n\x1b[2m[herdr exited with code ${message.code} — reconnecting will restart it]\x1b[0m\r\n`);
@@ -113,8 +197,17 @@ export function XTermView({
             if (resizeTimer !== null) {
                 clearTimeout(resizeTimer);
             }
+            if (redrawHandle !== null) {
+                window.cancelAnimationFrame(redrawHandle);
+            }
             unsubscribe();
             inputDisposable.dispose();
+            renderDisposable.dispose();
+            scrollDisposable.dispose();
+            resizeDisposable.dispose();
+            graphicsResetRef.current = null;
+            imageStore.clear();
+            renderer?.dispose();
             xterm.dispose();
             xtermRef.current = null;
             fitAddonRef.current = null;
@@ -143,6 +236,7 @@ export function XTermView({
         }
         if (startedRef.current) {
             xterm.reset();
+            graphicsResetRef.current?.();
         }
         fitAddonRef.current?.fit();
         send({ type: 'start', cols: xterm.cols, rows: xterm.rows });
@@ -151,45 +245,167 @@ export function XTermView({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [connected]);
 
-    // touch devices fire no native "wheel" event, so drag gestures never reach
-    // xterm's own wheel handler — the one that scrolls scrollback, or (in the TUI's
-    // alt-screen buffer with mouse tracking on) sends SGR mouse-scroll codes / arrow
-    // keys. Re-synthesize that wheel event from touch deltas instead of duplicating
-    // xterm's scroll-vs-mouse-tracking-vs-arrow-key logic ourselves.
+    // touch devices fire no native "wheel" event, so drag gestures never reach xterm's own
+    // wheel handler — the one that scrolls scrollback, or (in the TUI's alt-screen buffer with
+    // mouse tracking on) sends SGR mouse-scroll codes / arrow keys. Re-synthesize the mouse
+    // events from touch instead of duplicating xterm's own scroll/tracking logic. The
+    // coordinates matter: herdr reports mouse position per cell, so an event without
+    // clientX/clientY lands on cell (1, 1) and scrolls whatever sits in the corner.
     useEffect(() => {
         const container = containerRef.current;
         if (!container) {
             return;
         }
-        let lastY: number | null = null;
 
+        const dispatchToTerminal = (event: MouseEvent) => {
+            xtermRef.current?.element?.dispatchEvent(event);
+        };
+        const recognizer = new TouchGestureRecognizer({
+            onScroll: (deltaY, point) => {
+                dispatchToTerminal(
+                    new WheelEvent('wheel', {
+                        deltaY,
+                        deltaMode: 0,
+                        clientX: point.x,
+                        clientY: point.y,
+                        bubbles: true,
+                        cancelable: true,
+                    }),
+                );
+            },
+            // holding a finger is the touch equivalent of a right click, which is how herdr's
+            // own right-click handling becomes reachable from a phone
+            onLongPress: (point) => {
+                // the hold threshold is invisible, so confirm it the way a native long press does
+                navigator.vibrate?.(LONG_PRESS_HAPTIC_MS);
+                for (const type of ['mousedown', 'mouseup'] as const) {
+                    dispatchToTerminal(
+                        new MouseEvent(type, {
+                            button: RIGHT_MOUSE_BUTTON,
+                            buttons: type === 'mousedown' ? RIGHT_MOUSE_BUTTONS_MASK : 0,
+                            clientX: point.x,
+                            clientY: point.y,
+                            bubbles: true,
+                            cancelable: true,
+                        }),
+                    );
+                }
+            },
+        });
+
+        const pointOf = (event: TouchEvent): TouchPoint => ({
+            x: event.touches[0].clientX,
+            y: event.touches[0].clientY,
+        });
         const onTouchStart = (event: TouchEvent) => {
-            lastY = event.touches.length === 1 ? event.touches[0].clientY : null;
+            if (event.touches.length === 1) {
+                recognizer.start(pointOf(event));
+            }
         };
         const onTouchMove = (event: TouchEvent) => {
-            const target = xtermRef.current?.element;
-            if (lastY === null || event.touches.length !== 1 || !target) {
+            if (event.touches.length !== 1) {
                 return;
             }
-            const currentY = event.touches[0].clientY;
-            const deltaY = lastY - currentY;
-            lastY = currentY;
-            event.preventDefault();
-            target.dispatchEvent(new WheelEvent('wheel', { deltaY, deltaMode: 0, bubbles: true, cancelable: true }));
+            if (recognizer.move(pointOf(event))) {
+                event.preventDefault();
+            }
         };
-        const onTouchEnd = () => {
-            lastY = null;
+        // after a hold the browser still emits its compatibility mouse events, which would land
+        // a left click on top of the right click we just sent; preventing the touchend default
+        // is what suppresses them
+        const onTouchEnd = (event: TouchEvent) => {
+            if (recognizer.didLongPress) {
+                event.preventDefault();
+            }
+            recognizer.end();
+        };
+        // the browser raises its own menu for the same long press we just turned into a right click
+        const onContextMenu = (event: MouseEvent) => {
+            if (recognizer.didLongPress) {
+                event.preventDefault();
+            }
         };
 
         container.addEventListener('touchstart', onTouchStart, { passive: true });
         container.addEventListener('touchmove', onTouchMove, { passive: false });
-        container.addEventListener('touchend', onTouchEnd, { passive: true });
-        container.addEventListener('touchcancel', onTouchEnd, { passive: true });
+        container.addEventListener('touchend', onTouchEnd, { passive: false });
+        container.addEventListener('touchcancel', onTouchEnd, { passive: false });
+        container.addEventListener('contextmenu', onContextMenu);
         return () => {
             container.removeEventListener('touchstart', onTouchStart);
             container.removeEventListener('touchmove', onTouchMove);
             container.removeEventListener('touchend', onTouchEnd);
             container.removeEventListener('touchcancel', onTouchEnd);
+            container.removeEventListener('contextmenu', onContextMenu);
+            recognizer.end();
+        };
+    }, []);
+
+    // Image paste and drop. A paste that also carries text is left alone — text is what
+    // the user meant, and xterm already handles it.
+    useEffect(() => {
+        const container = containerRef.current;
+        if (!container) {
+            return;
+        }
+
+        const emit = (files: File[]): boolean => {
+            if (files.length === 0) {
+                return false;
+            }
+            onImageFilesRef.current?.(files);
+            return true;
+        };
+
+        const onPaste = (event: ClipboardEvent) => {
+            if (event.clipboardData?.getData('text/plain')) {
+                return;
+            }
+            if (emit(imageFilesFromDataTransfer(event.clipboardData))) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+        };
+
+        const draggingFiles = (event: DragEvent): boolean =>
+            Array.from(event.dataTransfer?.items ?? []).some((item) => item.kind === 'file');
+
+        const onDragOver = (event: DragEvent) => {
+            if (!draggingFiles(event)) {
+                return;
+            }
+            event.preventDefault();
+            if (event.dataTransfer) {
+                event.dataTransfer.dropEffect = 'copy';
+            }
+            container.classList.add('drop-target');
+        };
+
+        const onDragLeave = (event: DragEvent) => {
+            if (event.relatedTarget instanceof Node && container.contains(event.relatedTarget)) {
+                return;
+            }
+            container.classList.remove('drop-target');
+        };
+
+        const onDrop = (event: DragEvent) => {
+            container.classList.remove('drop-target');
+            if (!draggingFiles(event)) {
+                return;
+            }
+            event.preventDefault();
+            emit(imageFilesFromDataTransfer(event.dataTransfer));
+        };
+
+        container.addEventListener('paste', onPaste);
+        container.addEventListener('dragover', onDragOver);
+        container.addEventListener('dragleave', onDragLeave);
+        container.addEventListener('drop', onDrop);
+        return () => {
+            container.removeEventListener('paste', onPaste);
+            container.removeEventListener('dragover', onDragOver);
+            container.removeEventListener('dragleave', onDragLeave);
+            container.removeEventListener('drop', onDrop);
         };
     }, []);
 

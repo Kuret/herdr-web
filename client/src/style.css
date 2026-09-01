@@ -158,10 +158,23 @@ body {
     background: var(--bg);
     overflow: hidden;
     touch-action: pan-y pinch-zoom;
+    /* a hold is forwarded to herdr as a right click, so iOS must not raise its own callout */
+    -webkit-touch-callout: none;
 }
 
 .xterm-wrap .xterm {
     height: 100%;
+}
+
+/* kitty graphics frames (terminal-browser panes) drawn over xterm's own grid;
+   never intercept pointer events — the TUI's mouse tracking and the touch-scroll
+   shim both rely on reaching xterm underneath */
+.xterm-screen .kitty-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+    z-index: 5;
 }
 
 /* ---------- composer ---------- */
@@ -179,14 +192,29 @@ body {
     scrollbar-width: none;
 }
 
+/* keys are grouped by purpose (motion, editing, function, signals); the rule
+   between groups is what keeps a 30-key bar scannable instead of a wall */
+.key-group {
+    display: flex;
+    gap: 6px;
+    flex: none;
+}
+
+/* extra gap, not a rule: groups stay legible whether the bar scrolls in one
+   line (phone) or wraps into rows (desktop), where a rule would land at a
+   line start as a stray mark */
+.key-group + .key-group {
+    margin-left: 10px;
+}
+
 .quick-keys::-webkit-scrollbar {
     display: none;
 }
 
 .key-btn {
-    min-width: var(--touch);
+    min-width: 40px;
     min-height: 38px;
-    padding: 0 12px;
+    padding: 0 10px;
     border: 1px solid #3d4956;
     border-radius: 9px;
     background: #1c242c;
@@ -204,9 +232,75 @@ body {
     border-color: var(--accent);
 }
 
+.key-danger {
+    color: #ffb3b3;
+}
+
+/* the collapse toggle is the one key that must never scroll out of reach */
+.key-collapse {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    min-width: 34px;
+    padding: 0 8px;
+    background: var(--panel);
+}
+
+.key-btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+.key-btn:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+/* an upload takes longer than a keypress, so the key itself carries the wait */
+.key-busy {
+    animation: key-busy-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes key-busy-pulse {
+    0%, 100% { opacity: 0.45; }
+    50% { opacity: 0.85; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .key-busy {
+        animation: none;
+    }
+}
+
+/* kept in the layout rather than display:none so a programmatic click() is
+   reliable across mobile browsers */
+.file-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* dragging an image over the terminal: outlined, not tinted, so the text under
+   it keeps its contrast */
+.xterm-wrap.drop-target {
+    outline: 2px dashed var(--accent);
+    outline-offset: -4px;
+}
+
 .key-danger:active {
     border-color: var(--blocked);
     color: var(--blocked);
+}
+
+.key-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
 }
 
 button:focus-visible,
@@ -259,6 +353,11 @@ input:focus-visible,
     .quick-keys {
         flex-wrap: wrap;
         overflow-x: visible;
+        row-gap: 6px;
+    }
+
+    .key-btn:hover:not(:disabled) {
+        border-color: #55677a;
     }
 }
 
