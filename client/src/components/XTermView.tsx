@@ -319,11 +319,11 @@ export function XTermView({
             }
             recognizer.end();
         };
-        // the browser raises its own menu for the same long press we just turned into a right click
+        // the native menu would cover the terminal on every right click — on desktop it hides
+        // herdr's own right-click handling, and on touch it duplicates the long press we just
+        // turned into a right click. The mousedown/mouseup still reach xterm either way.
         const onContextMenu = (event: MouseEvent) => {
-            if (recognizer.didLongPress) {
-                event.preventDefault();
-            }
+            event.preventDefault();
         };
 
         container.addEventListener('touchstart', onTouchStart, { passive: true });

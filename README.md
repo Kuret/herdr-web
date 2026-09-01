@@ -20,8 +20,11 @@ Chrome/Edge even when the page is closed.
   even with the page closed**. In-app toasts mirror every event while the page is open.
 - **Agent herd strip** — the top bar shows one status dot per agent pane (amber = working,
   green = idle, red = blocked), fed by a CLI topology poller independent of the terminal stream.
-- **Quick-keys bar** — `prefix` (ctrl+a), `esc`, `tab`, arrows, `ctrl+c`, `enter` for keys phone
-  keyboards lack.
+- **Quick-keys bar** — ~30 keys phone keyboards lack, grouped by purpose: `prefix` (ctrl+a),
+  `esc`, `tab`/`⇧tab`, `enter`; signals `ctrl+c`/`ctrl+d`/`ctrl+z`; arrows, `pgup`/`pgdn`,
+  `home`/`end`; `bksp`, `del`, `alt+enter` (newline without submitting); line editing
+  `ctrl+u`/`ctrl+w`/`ctrl+l`/`ctrl+r`; and `F1`–`F4`. Plus one-shot `ctrl`/`alt` modifiers for
+  the next key you type.
 - **Installable PWA** with Nerd Font glyphs bundled (Symbols Nerd Font Mono, MIT), so the TUI's
   icons render on any device.
 

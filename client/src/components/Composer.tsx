@@ -23,6 +23,12 @@ const QUICK_KEY_GROUPS: ReadonlyArray<ReadonlyArray<QuickKey>> = [
     ],
     [
         { label: 'ctrl·c', bytes: '\x03', title: 'Interrupt the running command', danger: true },
+        {
+            label: 'ctrl·c·c',
+            bytes: '\x03\x03',
+            title: 'Double Ctrl+C — quits agents that require a second interrupt',
+            danger: true,
+        },
         { label: 'ctrl·d', bytes: '\x04', title: 'End of input — exits the shell on an empty line', danger: true },
         { label: 'ctrl·z', bytes: '\x1a', title: 'Suspend the running command', danger: true },
     ],
@@ -65,11 +71,30 @@ const MODIFIER_KEYS: ReadonlyArray<{ modifier: ArmedModifier; label: string }> =
 ];
 
 // what survives a collapse: the keys needed mid-run, taken from the groups above
-// rather than redeclared, so a byte sequence is only ever defined once
-const COLLAPSED_KEY_LABELS: readonly string[] = ['esc', 'tab', 'enter', 'ctrl·c'];
-const COLLAPSED_KEYS: readonly QuickKey[] = COLLAPSED_KEY_LABELS.map((label) =>
-    QUICK_KEY_GROUPS.flat().find((key) => key.label === label),
-).filter((key): key is QuickKey => key !== undefined);
+// rather than redeclared, so a byte sequence is only ever defined once.
+// ctrl, alt and img stay visible in either state, so they aren't repeated here.
+const COLLAPSED_KEY_LABELS: readonly string[] = [
+    'prefix',
+    'tab',
+    'enter',
+    'ctrl·c',
+    'ctrl·c·c',
+    'home',
+    'end',
+    '↑',
+    '↓',
+    '←',
+    '→',
+    'F1',
+];
+const COLLAPSED_KEYS: readonly QuickKey[] = COLLAPSED_KEY_LABELS.map((label) => {
+    const key = QUICK_KEY_GROUPS.flat().find((candidate) => candidate.label === label);
+    // a typo here would silently drop a key from the collapsed bar, so fail at load
+    if (!key) {
+        throw new Error(`collapsed quick key "${label}" is not defined in QUICK_KEY_GROUPS`);
+    }
+    return key;
+});
 
 interface ComposerProps {
     readonly disabled: boolean;

@@ -1,5 +1,19 @@
 # herdr-web-plugin — agent instructions
 
+## Green tests mean ship it — don't wait for approval
+
+In this repo, don't stop to ask "shall I proceed?" mid-task. Implement the change, then run:
+
+```bash
+cd client && npm run build && npx vitest run   # typecheck + build + client tests
+npm test                                       # server-side tests (repo root)
+```
+
+If those pass, finish the job on your own — including the plugin restart below — and report the
+result. Only come back with a question when the tests fail, when the request is genuinely
+ambiguous, or for an action that's destructive or publishing (`git commit`, `git push`,
+`gh pr create`), which still needs an explicit ask.
+
 ## Always restart the local install after code changes
 
 This plugin runs as a persistent background process declared via `[[startup]]` in
