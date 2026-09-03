@@ -105,6 +105,10 @@ interface ComposerProps {
     readonly onSendBytes: (bytes: string) => void;
     /** Images picked from the photo library or camera. Omit to hide the image keys. */
     readonly onImageFiles?: (files: File[]) => void;
+    /** Whether the quick-keys bar renders. When false, a floating action button takes over. */
+    readonly showQuickKeys?: boolean;
+    /** Opens the settings sheet. Omit to hide the settings entries. */
+    readonly onOpenSettings?: () => void;
     readonly uploadingImage?: boolean;
 }
 
@@ -123,10 +127,13 @@ export function Composer({
     onSendBytes,
     onImageFiles,
     uploadingImage = false,
+    showQuickKeys = true,
+    onOpenSettings,
 }: ComposerProps) {
     const [collapsed, setCollapsed] = useState(() => readQuickKeysCollapsed(localStorage, HAS_COARSE_POINTER));
     const galleryInputRef = useRef<HTMLInputElement>(null);
     const cameraInputRef = useRef<HTMLInputElement>(null);
+    const [fabOpen, setFabOpen] = useState(false);
 
     const toggleCollapsed = () => {
         setCollapsed((current) => {
@@ -159,7 +166,77 @@ export function Composer({
     );
 
     return (
-        <footer className="composer">
+        <footer className={showQuickKeys ? 'composer' : 'composer composer-hidden'}>
+            <input
+                ref={galleryInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="file-input"
+                onChange={onImageInputChange}
+                tabIndex={-1}
+            />
+            <input
+                ref={cameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="file-input"
+                onChange={onImageInputChange}
+                tabIndex={-1}
+            />
+            {!showQuickKeys ? (
+                <>
+                <div className={fabOpen ? 'fab-menu fab-open' : 'fab-menu'} role="menu" aria-label="pane actions">
+                    <button
+                        type="button"
+                        className="fab-btn"
+                        role="menuitem"
+                        aria-label="Attach an image from photos"
+                        title="Attach an image from photos — its path is typed into the pane"
+                        disabled={disabled || uploadingImage}
+                        onClick={() => galleryInputRef.current?.click()}
+                    >
+                        img
+                    </button>
+                    <button
+                        type="button"
+                        className="fab-btn"
+                        role="menuitem"
+                        aria-label="Attach an image from the camera"
+                        title="Attach an image from the camera — its path is typed into the pane"
+                        disabled={disabled || uploadingImage}
+                        onClick={() => cameraInputRef.current?.click()}
+                    >
+                        cam
+                    </button>
+                    {onOpenSettings ? (
+                        <button
+                            type="button"
+                            className="fab-btn"
+                            role="menuitem"
+                            aria-label="Open settings"
+                            title="Settings"
+                            onClick={() => {
+                                setFabOpen(false);
+                                onOpenSettings();
+                            }}
+                        >
+                            settings
+                        </button>
+                    ) : null}
+                </div>
+                <button
+                    type="button"
+                    className="fab"
+                    aria-expanded={fabOpen}
+                    aria-label="Show pane actions"
+                    onClick={() => setFabOpen((current) => !current)}
+                >
+                    +
+                </button>
+                </>
+            ) : (
             <div className="quick-keys" role="toolbar" aria-label="quick keys">
                 <div className="key-group">
                     <button
@@ -195,26 +272,8 @@ export function Composer({
                             {label}
                         </button>
                     ))}
-                    {onImageFiles && (
+                    {onImageFiles && showQuickKeys && (
                         <>
-                            <input
-                                ref={galleryInputRef}
-                                type="file"
-                                accept="image/*"
-                                multiple
-                                className="file-input"
-                                onChange={onImageInputChange}
-                                tabIndex={-1}
-                            />
-                            <input
-                                ref={cameraInputRef}
-                                type="file"
-                                accept="image/*"
-                                capture="environment"
-                                className="file-input"
-                                onChange={onImageInputChange}
-                                tabIndex={-1}
-                            />
                             <button
                                 type="button"
                                 className={uploadingImage ? 'key-btn key-busy' : 'key-btn'}
@@ -237,6 +296,17 @@ export function Composer({
                             </button>
                         </>
                     )}
+                    {onOpenSettings ? (
+                        <button
+                            type="button"
+                            className="key-btn"
+                            aria-label="Open settings"
+                            title="Settings"
+                            onClick={onOpenSettings}
+                        >
+                            ⚙
+                        </button>
+                    ) : null}
                 </div>
                 {collapsed ? (
                     <div className="key-group">{COLLAPSED_KEYS.map(renderKey)}</div>
@@ -247,7 +317,8 @@ export function Composer({
                         </div>
                     ))
                 )}
-            </div>
+                </div>
+            )}
         </footer>
     );
 }

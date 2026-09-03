@@ -2,11 +2,10 @@ import { useEffect, useState } from 'react';
 import { Composer } from './components/Composer';
 import { SettingsSheet } from './components/SettingsSheet';
 import { ToastHost } from './components/ToastHost';
-import { TopBar } from './components/TopBar';
 import { XTermView } from './components/XTermView';
 import { NotificationHelp } from './components/NotificationHelp';
 import { insecureContextHelp, notificationSettingsHelp, untrustedCertHelp } from './lib/notifications';
-import { ALL_CHANGES_STORAGE_KEY, TOASTS_STORAGE_KEY, loadStoredSettings, shouldAnnounce } from './lib/notification-settings';
+import { ALL_CHANGES_STORAGE_KEY, QUICK_KEYS_ENABLED_STORAGE_KEY, TOASTS_STORAGE_KEY, loadStoredSettings, shouldAnnounce } from './lib/notification-settings';
 import type { NotificationSettings } from './lib/notification-settings';
 import { quoteShellPath, uploadImage, validateImageFile } from './lib/terminal-image';
 import type { NotificationSettingsHelp } from './lib/notifications';
@@ -39,7 +38,7 @@ function initialKeyboardEnabled(): boolean {
 }
 
 export function App() {
-    const { connected, panes, lastEvent, lastError, send, subscribeTerminal } = useHerdrSocket();
+    const { connected, lastEvent, lastError, send, subscribeTerminal } = useHerdrSocket();
     const [stored, setStored] = useState(loadStoredSettings);
     const { enabled: notificationsEnabled, toggle: toggleNotifications, notifyForEvent } = useNotifications(stored.allChanges);
     const [notice, setNotice] = useState<Notice | null>(null);
@@ -55,6 +54,7 @@ export function App() {
     useEffect(() => {
         localStorage.setItem(TOASTS_STORAGE_KEY, String(stored.toasts));
         localStorage.setItem(ALL_CHANGES_STORAGE_KEY, String(stored.allChanges));
+        localStorage.setItem(QUICK_KEYS_ENABLED_STORAGE_KEY, String(stored.quickKeys));
     }, [stored]);
     const [help, setHelp] = useState<NotificationSettingsHelp | null>(null);
 
@@ -162,12 +162,6 @@ export function App() {
 
     return (
         <>
-            <TopBar
-                connected={connected}
-                panes={panes}
-                notificationsEnabled={notificationsEnabled || stored.toasts}
-                onOpenSettings={() => setSettingsOpen(true)}
-            />
             <XTermView
                 connected={connected}
                 keyboardEnabled={keyboardEnabled}
@@ -186,6 +180,8 @@ export function App() {
                 onSendBytes={(bytes) => send({ type: 'input', data: bytes })}
                 onImageFiles={(files) => void onImageFiles(files)}
                 uploadingImage={uploadingImage}
+                showQuickKeys={settings.quickKeys}
+                onOpenSettings={() => setSettingsOpen(true)}
             />
             <ToastHost event={settings.toasts ? announced : null} error={lastError} notice={notice} />
             <SettingsSheet

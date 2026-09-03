@@ -37,9 +37,15 @@ export function SettingsSheet({ open, settings, onChange, onClose }: SettingsShe
 
     return (
         <div className="sheet-backdrop" role="presentation" onClick={onClose}>
-            <div className="sheet" role="dialog" aria-modal="true" aria-label="Notifications" onClick={(e) => e.stopPropagation()}>
-                <h2 className="sheet-title">notifications</h2>
+            <div className="sheet" role="dialog" aria-modal="true" aria-label="Settings" onClick={(e) => e.stopPropagation()}>
+                <h2 className="sheet-title">settings</h2>
 
+                <SwitchRow
+                    label="Shortcuts bar"
+                    hint="Hide for a full-terminal view — a floating + button keeps img/cam upload reachable."
+                    checked={settings.quickKeys}
+                    onChange={(value) => onChange('quickKeys', value)}
+                />
                 <SwitchRow
                     label="On this page"
                     hint="Banners in herdr web while it is open."
