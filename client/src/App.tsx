@@ -163,6 +163,7 @@ export function App() {
     return (
         <>
             <XTermView
+                refitKey={settings.quickKeys ? 'bar' : 'full'}
                 connected={connected}
                 keyboardEnabled={keyboardEnabled}
                 armedModifier={armedModifier}

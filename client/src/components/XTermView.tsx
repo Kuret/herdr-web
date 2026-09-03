@@ -55,6 +55,8 @@ interface XTermViewProps {
     readonly subscribeTerminal: (handler: (message: TerminalMessage) => void) => () => void;
     /** Images pasted into, or dropped onto, the terminal. Omit to ignore both. */
     readonly onImageFiles?: (files: File[]) => void;
+    /** Changing this forces an immediate refit + PTY resize (e.g. layout toggles). */
+    readonly refitKey?: string;
 }
 
 export function XTermView({
@@ -65,6 +67,7 @@ export function XTermView({
     send,
     subscribeTerminal,
     onImageFiles,
+    refitKey,
 }: XTermViewProps) {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const onImageFilesRef = useRef(onImageFiles);
@@ -217,7 +220,20 @@ export function XTermView({
 
     // touch devices: taps should navigate the TUI (mouse events) without popping
     // the virtual keyboard — inputMode 'none' suppresses it until the ⌨ toggle
+        // a layout toggle (quick-keys bar on/off) can resize the container while the
+    // ResizeObserver is mid-debounce; re-fit eagerly so the PTY grid never goes stale
     useEffect(() => {
+        const addon = fitAddonRef.current;
+        const xterm = xtermRef.current;
+        if (!addon || !xterm || !connected) {
+            return;
+        }
+        addon.fit();
+        send({ type: 'resize', cols: xterm.cols, rows: xterm.rows });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [refitKey]);
+
+useEffect(() => {
         const textarea = xtermRef.current?.textarea;
         if (!textarea) {
             return;
